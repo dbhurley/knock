@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block header_meta %}
+<div>Search Status Report</div>
+<div>{{ search.search_number | d }}</div>
+<div>Generated {{ generated_at }}</div>
+{% endblock %}
+
+{% block content %}
+
+<h1>Search Status Report</h1>
+<p class="text-muted">{{ search.search_number | d }} &mdash; Prepared {{ generated_at }}</p>
+
+{# ---- Search Overview ---- #}
+<h2>Search Overview</h2>
+<div class="card">
+  <table>
+    <tbody>
+      <tr><td style="width: 160px;"><strong>School</strong></td><td>{{ school.name | d }}</td></tr>
+      <tr><td><strong>Location</strong></td><td>{{ school.city | d }}{% if school.state %}, {{ school.state }}{% endif %}</td></tr>
+      <tr><td><strong>Position</strong></td><td>{{ search.position_title | d }}</td></tr>
+      <tr><td><strong>Reports To</strong></td><td>{{ search.reports_to | d("Board of Trustees") }}</td></tr>
+      <tr><td><strong>Target Start</strong></td><td>{{ search.target_start_date | format_date("%B %d, %Y") }}</td></tr>
+      <tr><td><strong>Lead Consultant</strong></td><td>{{ search.lead_consultant | d }}</td></tr>
+      <tr><td><strong>Search Status</strong></td><td><span class="tag">{{ search.status | d | upper }}</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+{# ---- Pipeline Summary ---- #}
+<h2>Candidate Pipeline</h2>
+<div class="card">
+  <table>
+    <thead><tr><th>Stage</th><th>Count</th><th>Visual</th></tr></thead>
+    <tbody>
+    {% for stage in pipeline %}
+    <tr>
+      <td><strong>{{ stage.label }}</strong></td>
+      <td>{{ stage.count }}</td>
+      <td style="width: 50%;">
+        <div class="progress-bar-bg">
+          <div class="progress-bar-fill" style="width: {{ stage.pct }}%;"></div>
+        </div>
+      </td>
+    </tr>
+    {% endfor %}
+    <tr>
+      <td><strong>Total Candidates</strong></td>
+      <td colspan="2"><strong>{{ total_candidates }}</strong></td>
+    </tr>
+    </tbody>
+  </table>
+</div>
+
+{% if search.candidates_identified or search.candidates_presented or search.candidates_interviewed or search.finalists %}
+<div style="display: flex; gap: 12px; margin-bottom: 16px;">
+  {% for item in [
+      ("Identified", search.candidates_identified),
+      ("Presented", search.candidates_presented),
+      ("Interviewed", search.candidates_interviewed),
+      ("Finalists", search.finalists)
+  ] %}
+  {% if item[1] %}
+  <div class="card text-center" style="flex: 1;">
+    <div style="font-size: 20pt; font-weight: 700; color: {{ brand.primary }};">{{ item[1] }}</div>
+    <div class="text-small text-muted">{{ item[0] }}</div>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ---- Recent Activities ---- #}
+{% if activities %}
+<h2>Key Activities</h2>
+<table>
+  <thead><tr><th style="width: 110px;">Date</th><th style="width: 130px;">Type</th><th>Description</th></tr></thead>
+  <tbody>
+  {% for act in activities[:15] %}
+  <tr>
+    <td class="text-small">{{ act.created_at | format_date("%b %d, %Y") }}</td>
+    <td><span class="tag">{{ act.activity_type | d }}</span></td>
+    <td>{{ act.description | d }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# ---- Next Steps ---- #}
+<h2>Next Steps &amp; Timeline</h2>
+<div class="card">
+  {% if search.target_start_date %}
+  <p><strong>Target Placement Date:</strong> {{ search.target_start_date | format_date("%B %d, %Y") }}</p>
+  {% endif %}
+  <ul>
+    {% if search.status == 'sourcing' or search.status == 'active' %}
+    <li>Continue identifying and vetting candidates</li>
+    <li>Schedule initial screening conversations</li>
+    {% elif search.status == 'presenting' %}
+    <li>Present finalist candidates to search committee</li>
+    <li>Coordinate on-campus interview schedule</li>
+    {% elif search.status == 'interviewing' %}
+    <li>Complete finalist interviews</li>
+    <li>Gather committee and candidate feedback</li>
+    <li>Conduct reference checks</li>
+    {% elif search.status == 'offer' %}
+    <li>Finalize compensation package</li>
+    <li>Facilitate offer presentation</li>
+    {% else %}
+    <li>Review current pipeline and adjust strategy as needed</li>
+    {% endif %}
+    <li>Next status update: within two weeks</li>
+  </ul>
+</div>
+
+{# ---- Fee / Payment Status ---- #}
+<h2>Engagement Summary</h2>
+<div class="card">
+  <table>
+    <tbody>
+      {% if search.pricing_band %}<tr><td style="width: 160px;"><strong>Pricing Band</strong></td><td>{{ search.pricing_band }}</td></tr>{% endif %}
+      {% if search.fee_amount %}<tr><td><strong>Total Fee</strong></td><td>{{ search.fee_amount | format_currency }}</td></tr>{% endif %}
+      {% if search.fee_status %}<tr><td><strong>Fee Status</strong></td><td><span class="tag">{{ search.fee_status | upper }}</span></td></tr>{% endif %}
+      {% if search.deposit_amount %}<tr><td><strong>Deposit</strong></td><td>{{ search.deposit_amount | format_currency }} {% if search.deposit_paid %}<span class="tag">Paid {{ search.deposit_paid_date | format_date("%b %d, %Y") }}</span>{% else %}<span class="text-muted">(pending)</span>{% endif %}</td></tr>{% endif %}
+      {% if search.contract_length %}<tr><td><strong>Contract</strong></td><td>{{ search.contract_length }}</td></tr>{% endif %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

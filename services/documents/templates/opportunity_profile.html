@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block header_meta %}
+<div>Opportunity Profile</div>
+<div>{{ school.name | d }}</div>
+<div>{{ generated_at }}</div>
+{% endblock %}
+
+{% block content %}
+
+{# ---- Title Page Section ---- #}
+<div style="text-align: center; margin: 40px 0 30px 0;">
+  <h1 style="font-size: 22pt; margin-bottom: 6px;">{{ search.position_title | d }}</h1>
+  <div style="font-size: 14pt; color: {{ brand.primary }}; font-weight: 600; margin-bottom: 8px;">
+    {{ school.name | d }}
+  </div>
+  <div class="text-muted" style="font-size: 10pt;">
+    {{ school.city | d }}{% if school.state %}, {{ school.state }}{% endif %}
+  </div>
+  <div style="width: 60px; height: 2px; background: {{ brand.primary }}; margin: 20px auto;"></div>
+</div>
+
+{# ---- School Overview ---- #}
+<h2>About {{ school.name | d }}</h2>
+<div class="two-col">
+  <div class="col-left">
+    <p>
+      {{ school.name | d }} is a
+      {% if school.coed_status and school.coed_status != 'Coed' %}{{ school.coed_status | lower }}{% else %}coeducational{% endif %}
+      {% if school.is_independent %}independent{% elif school.is_private %}private{% else %}{{ school.school_type | d | lower }}{% endif %}
+      school
+      {% if school.boarding_status and school.boarding_status != 'Day' %}with a {{ school.boarding_status | lower }} program{% endif %}
+      located in {{ school.city | d }}{% if school.state %}, {{ school.state }}{% endif %}.
+      {% if school.grade_low and school.grade_high %}
+      The school serves students in grades {{ school.grade_low }} through {{ school.grade_high }}
+      {% endif %}
+      {% if school.enrollment_total %}
+      with a current enrollment of approximately {{ school.enrollment_total | d }} students.
+      {% endif %}
+      {% if school.founding_year %}Founded in {{ school.founding_year }}, the school has{% else %}The school has{% endif %}
+      a long tradition of academic excellence and community engagement.
+    </p>
+  </div>
+  <div class="col-right">
+    <div class="card" style="font-size: 9pt;">
+      <table>
+        <tbody>
+          {% if school.enrollment_total %}<tr><td><strong>Enrollment</strong></td><td>{{ school.enrollment_total }}</td></tr>{% endif %}
+          {% if school.school_type %}<tr><td><strong>Type</strong></td><td>{{ school.school_type }}</td></tr>{% endif %}
+          {% if school.grade_low and school.grade_high %}<tr><td><strong>Grades</strong></td><td>{{ school.grade_low }} &ndash; {{ school.grade_high }}</td></tr>{% endif %}
+          {% if school.student_teacher_ratio %}<tr><td><strong>Student-Teacher Ratio</strong></td><td>{{ "%.0f" | format(school.student_teacher_ratio) }}:1</td></tr>{% endif %}
+          {% if school.total_staff %}<tr><td><strong>Faculty &amp; Staff</strong></td><td>{{ school.total_staff }}</td></tr>{% endif %}
+          {% if school.campus_acres %}<tr><td><strong>Campus</strong></td><td>{{ "%.0f" | format(school.campus_acres) }} acres</td></tr>{% endif %}
+          {% if school.nais_member %}<tr><td><strong>NAIS Member</strong></td><td>Yes</td></tr>{% endif %}
+          {% if school.website %}<tr><td><strong>Website</strong></td><td>{{ school.website }}</td></tr>{% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if school.strategic_priorities %}
+<h3>Strategic Priorities</h3>
+<div>
+  {% for sp in school.strategic_priorities %}
+  <span class="tag">{{ sp }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ---- The Opportunity ---- #}
+<h2>The Opportunity</h2>
+<p>
+  {{ school.name | d }} seeks an experienced and visionary leader to serve as its next
+  <strong>{{ search.position_title | d }}</strong>.
+  {% if search.reports_to %}This position reports to the {{ search.reports_to }}.{% endif %}
+</p>
+{% if search.position_description %}
+<p>{{ search.position_description }}</p>
+{% endif %}
+
+{# ---- Desired Qualifications ---- #}
+<h2>Desired Qualifications</h2>
+{% if search.position_requirements %}
+<p>{{ search.position_requirements }}</p>
+{% endif %}
+{% if search.required_education %}
+<h3>Education</h3>
+<ul>
+  {% for ed in search.required_education %}
+  <li>{{ ed }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% if search.required_experience_years %}
+<p>A minimum of <strong>{{ search.required_experience_years }} years</strong> of progressive leadership experience is expected.</p>
+{% endif %}
+{% if search.preferred_backgrounds %}
+<h3>Preferred Background</h3>
+<div>
+  {% for bg in search.preferred_backgrounds %}
+  <span class="tag">{{ bg }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+{% if search.ideal_candidate_profile %}
+<h3>Ideal Candidate Profile</h3>
+<p>{{ search.ideal_candidate_profile }}</p>
+{% endif %}
+
+{# ---- Compensation ---- #}
+<h2>Compensation</h2>
+<div class="card">
+  <p>
+    {{ school.name | d }} offers a competitive compensation package
+    {% if search.salary_range_low and search.salary_range_high %}
+    with a salary range of <strong>{{ search.salary_range_low | format_currency }} &ndash; {{ search.salary_range_high | format_currency }}</strong>,
+    {% elif search.salary_band %}
+    at the <strong>{{ search.salary_band }}</strong> level,
+    {% endif %}
+    commensurate with experience and qualifications.
+  </p>
+  {% if search.additional_compensation %}
+  <p>{{ search.additional_compensation }}</p>
+  {% endif %}
+  {% if search.benefits_notes %}
+  <p><strong>Benefits:</strong> {{ search.benefits_notes }}</p>
+  {% endif %}
+</div>
+
+{# ---- Application Process ---- #}
+<h2>Application Process</h2>
+<p>
+  This search is being conducted by <strong>Knock</strong>, an executive search firm dedicated
+  exclusively to independent school leadership.
+  {% if search.client_contact_name %}
+  For questions, please contact {{ search.client_contact_name }}{% if search.client_contact_title %}, {{ search.client_contact_title }}{% endif %}.
+  {% endif %}
+</p>
+<p>
+  Interested candidates should submit a current resume and a letter of interest.
+  {% if search.target_start_date %}
+  The anticipated start date is <strong>{{ search.target_start_date | format_date("%B %Y") }}</strong>.
+  {% endif %}
+</p>
+
+{# ---- About Knock ---- #}
+<h2>About Knock</h2>
+<p>
+  Knock is an executive search firm specializing in leadership placements for independent
+  and private schools. We combine deep industry knowledge with a data-driven approach to
+  connect exceptional leaders with outstanding schools. Our proprietary matching technology
+  and extensive network ensure that each search yields the strongest possible candidate pool.
+</p>
+
+{% endblock %}

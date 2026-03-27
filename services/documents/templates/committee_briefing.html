@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block header_meta %}
+<div>Committee Briefing Packet</div>
+<div>{{ search.position_title | d }} &mdash; {{ school.name | d }}</div>
+<div>Generated {{ generated_at }}</div>
+{% endblock %}
+
+{% block content %}
+
+<h1>Search Committee Briefing Packet</h1>
+<p class="text-muted mb-2">
+  {{ search.position_title | d }} &mdash; {{ school.name | d }} &bull; Prepared {{ generated_at }}
+</p>
+
+{# ---- Search Summary ---- #}
+<h2>Search Summary</h2>
+<div class="card">
+  <table>
+    <tbody>
+      <tr><td style="width: 150px;"><strong>Position</strong></td><td>{{ search.position_title | d }}</td></tr>
+      <tr><td><strong>School</strong></td><td>{{ school.name | d }} &mdash; {{ school.city | d }}, {{ school.state | d }}</td></tr>
+      {% if search.lead_consultant %}<tr><td><strong>Lead Consultant</strong></td><td>{{ search.lead_consultant }}</td></tr>{% endif %}
+      <tr><td><strong>Candidates Presented</strong></td><td>{{ candidates | length }}</td></tr>
+      {% if search.target_start_date %}<tr><td><strong>Target Start</strong></td><td>{{ search.target_start_date | format_date("%B %d, %Y") }}</td></tr>{% endif %}
+    </tbody>
+  </table>
+</div>
+
+{# ---- Comparison Matrix ---- #}
+{% if candidates %}
+<h2>Candidate Comparison Matrix</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Candidate</th>
+      <th>Current Role</th>
+      <th style="width: 60px; text-align: center;">Score</th>
+      <th style="width: 70px; text-align: center;">Tier</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for c in candidates %}
+  <tr>
+    <td><strong>{{ c.full_name | d }}</strong></td>
+    <td class="text-small">{{ c.current_title | d }}{% if c.current_organization %}<br><span class="text-muted">{{ c.current_organization }}</span>{% endif %}</td>
+    <td style="text-align: center;">
+      {% if c.match_score %}<span class="score-badge" style="font-size: 9pt; padding: 2px 8px;">{{ "%.0f" | format(c.match_score) }}%</span>{% else %}&mdash;{% endif %}
+    </td>
+    <td style="text-align: center;">
+      {% if c.match_data and c.match_data.tier %}<span class="tag">{{ c.match_data.tier }}</span>{% else %}&mdash;{% endif %}
+    </td>
+    <td><span class="tag">{{ c.status | d | title }}</span></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# ---- Individual Candidate Profiles ---- #}
+{% for c in candidates %}
+<div class="{% if not loop.first %}page-break{% endif %}">
+  <h2 style="margin-top: 0;">
+    {{ loop.index }}. {{ c.full_name | d }}
+    {% if c.match_score %}
+    <span class="score-badge" style="font-size: 10pt; margin-left: 10px;">{{ "%.0f" | format(c.match_score) }}%</span>
+    {% endif %}
+  </h2>
+
+  <div class="card">
+    <div style="display: flex; gap: 16px; align-items: flex-start;">
+      {% if c.linkedin_profile_photo_url %}
+      <img class="photo-img" src="{{ c.linkedin_profile_photo_url }}" alt="" style="width: 70px; height: 70px;">
+      {% else %}
+      <div class="photo-placeholder" style="width: 70px; height: 70px; font-size: 20pt;">{{ (c.full_name or "??")[0] }}</div>
+      {% endif %}
+      <div>
+        <div style="font-size: 11pt;"><strong>{{ c.current_title | d }}</strong></div>
+        <div class="text-muted">{{ c.current_organization | d }}</div>
+      </div>
+    </div>
+  </div>
+
+  {# Education #}
+  {% if c.education %}
+  <h3>Education</h3>
+  <ul>
+    {% for ed in c.education %}
+    <li>{{ ed.degree | d }} in {{ ed.field_of_study | d }} &mdash; {{ ed.institution | d }}{% if ed.graduation_year %} ({{ ed.graduation_year }}){% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {# Career timeline #}
+  {% if c.experience %}
+  <h3>Career Timeline</h3>
+  {% for exp in c.experience[:5] %}
+  <div class="no-break" style="margin-bottom: 6px; padding-left: 10px; border-left: 2px solid {% if exp.is_current %}{{ brand.primary }}{% else %}{{ brand.border }}{% endif %};">
+    <strong>{{ exp.title | d }}</strong> &mdash; {{ exp.organization | d }}
+    <span class="text-small text-muted">
+      ({{ exp.start_date | format_date }}{% if exp.end_date %} &ndash; {{ exp.end_date | format_date }}{% elif exp.is_current %} &ndash; Present{% endif %})
+    </span>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {# Strengths #}
+  {% if c.strengths %}
+  <h3>Key Strengths</h3>
+  <div>
+    {% for s in c.strengths %}
+    <span class="tag">{{ s }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# Match reasoning #}
+  {% if c.match_reasoning %}
+  <h3>Fit Assessment</h3>
+  <p class="text-small">{{ c.match_reasoning }}</p>
+  {% endif %}
+
+  {# Suggested interview questions #}
+  <h3>Suggested Interview Questions</h3>
+  <ol style="font-size: 9pt;">
+    {% for q in c.interview_questions %}
+    <li style="margin-bottom: 4px;">{{ q }}</li>
+    {% endfor %}
+  </ol>
+</div>
+{% endfor %}
+
+{# ---- Rating Tool ---- #}
+{% if candidates %}
+<div class="page-break">
+  <h2 style="margin-top: 0;">Candidate Rating Worksheet</h2>
+  <p class="text-small text-muted mb-1">Please rate each candidate on a scale of 1&ndash;5 for each criterion.</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Criterion</th>
+        {% for c in candidates %}
+        <th style="text-align: center; font-size: 8pt; width: {{ (70 / candidates|length)|int }}%;">{{ c.full_name | d }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for criterion in rating_criteria %}
+      <tr>
+        <td>{{ criterion }}</td>
+        {% for c in candidates %}
+        <td style="text-align: center;">____</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      <tr style="border-top: 2px solid {{ brand.primary }};">
+        <td><strong>TOTAL</strong></td>
+        {% for c in candidates %}
+        <td style="text-align: center;"><strong>____</strong></td>
+        {% endfor %}
+      </tr>
+    </tbody>
+  </table>
+  <p class="text-small text-muted mt-1">Rating scale: 1 = Does not meet expectations &bull; 2 = Partially meets &bull; 3 = Meets &bull; 4 = Exceeds &bull; 5 = Exceptional</p>
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block header_meta %}
+<div>Candidate Profile</div>
+<div>{{ search.position_title | d }} &mdash; {{ school.name | d }}</div>
+<div>Generated {{ generated_at }}</div>
+{% endblock %}
+
+{% block content %}
+
+{# ---- Hero section ---- #}
+<div style="display: flex; gap: 18px; align-items: flex-start; margin-bottom: 16px;">
+  {% if person.linkedin_profile_photo_url %}
+  <img class="photo-img" src="{{ person.linkedin_profile_photo_url }}" alt="Photo">
+  {% else %}
+  <div class="photo-placeholder">{{ (person.first_name or "?")[0] }}{{ (person.last_name or "?")[0] }}</div>
+  {% endif %}
+
+  <div style="flex: 1;">
+    <h1>{{ person.full_name | d }}</h1>
+    <div style="font-size: 11pt; color: {{ brand.muted }}; margin-bottom: 4px;">
+      {{ person.current_title | d }}{% if person.current_organization %}, {{ person.current_organization }}{% endif %}
+    </div>
+    <div class="text-small text-muted">
+      {% if person.city %}{{ person.city }}{% endif %}{% if person.state %}, {{ person.state }}{% endif %}
+      {% if person.email_primary %}&nbsp;&bull;&nbsp;{{ person.email_primary }}{% endif %}
+    </div>
+  </div>
+
+  {% if match_score %}
+  <div style="text-align: center;">
+    <div class="score-badge">{{ "%.0f" | format(match_score.composite_score) }}%</div>
+    <div class="text-small text-muted mt-1">Match Score</div>
+    {% if match_score.tier %}
+    <div class="tag mt-1">{{ match_score.tier }}</div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{# ---- Professional Summary ---- #}
+{% if person.linkedin_summary or person.notes %}
+<h2>Professional Summary</h2>
+<p>{{ (person.linkedin_summary or person.notes) | truncate(500) }}</p>
+{% endif %}
+
+{# ---- Education ---- #}
+{% if education %}
+<h2>Education</h2>
+<table>
+  <thead><tr><th>Degree</th><th>Institution</th><th>Field</th><th>Year</th></tr></thead>
+  <tbody>
+  {% for ed in education %}
+  <tr>
+    <td>{{ ed.degree | d }}</td>
+    <td>{{ ed.institution | d }}</td>
+    <td>{{ ed.field_of_study | d }}</td>
+    <td>{{ ed.graduation_year | d }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# ---- Career Timeline ---- #}
+{% if experience %}
+<h2>Career Timeline</h2>
+{% for exp in experience %}
+<div class="no-break" style="margin-bottom: 10px; padding-left: 12px; border-left: 2px solid {% if exp.is_current %}{{ brand.primary }}{% else %}{{ brand.border }}{% endif %};">
+  <div style="display: flex; justify-content: space-between;">
+    <div>
+      <strong>{{ exp.title | d }}</strong>
+      <span class="text-muted">&mdash; {{ exp.organization | d }}</span>
+      {% if exp.is_current %}<span class="tag" style="margin-left: 6px;">Current</span>{% endif %}
+    </div>
+    <div class="text-small text-muted">
+      {{ exp.start_date | format_date }}{% if exp.end_date %} &ndash; {{ exp.end_date | format_date }}{% elif exp.is_current %} &ndash; Present{% endif %}
+    </div>
+  </div>
+  {% if exp.description %}
+  <p class="text-small" style="margin-top: 3px;">{{ exp.description | truncate(200) }}</p>
+  {% endif %}
+  {% if exp.school_type %}
+  <div class="text-small text-muted">{{ exp.school_type }}{% if exp.school_enrollment %} &bull; Enrollment: {{ exp.school_enrollment | d }}{% endif %}</div>
+  {% endif %}
+</div>
+{% endfor %}
+{% endif %}
+
+{# ---- Key Accomplishments / Strengths ---- #}
+{% if person.strengths or person.leadership_style %}
+<div class="two-col mt-2">
+  {% if person.strengths %}
+  <div class="col-left">
+    <h2 style="margin-top: 0;">Key Strengths</h2>
+    <ul>
+      {% for s in person.strengths %}
+      <li>{{ s }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% if person.leadership_style %}
+  <div class="col-right">
+    <h2 style="margin-top: 0;">Leadership Style</h2>
+    <ul>
+      {% for ls in person.leadership_style %}
+      <li>{{ ls }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ---- Notable qualifications ---- #}
+{% set quals = [] %}
+{% if person.fundraising_experience %}{% set _ = quals.append("Fundraising & Development") %}{% endif %}
+{% if person.capital_campaign_experience %}{% set _ = quals.append("Capital Campaign Leadership") %}{% endif %}
+{% if person.accreditation_experience %}{% set _ = quals.append("Accreditation Process") %}{% endif %}
+{% if person.diversity_experience %}{% set _ = quals.append("DEI Initiatives") %}{% endif %}
+{% if person.boarding_experience %}{% set _ = quals.append("Boarding School Operations") %}{% endif %}
+{% if person.international_experience %}{% set _ = quals.append("International Programs") %}{% endif %}
+{% if person.published_author %}{% set _ = quals.append("Published Author") %}{% endif %}
+{% if person.conference_speaker %}{% set _ = quals.append("Conference Speaker") %}{% endif %}
+{% if person.board_experience %}{% for b in person.board_experience %}{% set _ = quals.append("Board: " + b) %}{% endfor %}{% endif %}
+{% if quals %}
+<h2>Notable Qualifications</h2>
+<div>
+  {% for q in quals %}
+  <span class="tag">{{ q }}</span>
+  {% endfor %}
+</div>
+{% endif %}
+
+{# ---- Match Score Detail (Internal) ---- #}
+{% if match_score and match_score.match_reasoning %}
+<h2>Match Assessment <span class="text-small text-muted">(Internal Use Only)</span></h2>
+<div class="card">
+  <div style="display: flex; gap: 20px; margin-bottom: 8px;">
+    <div><strong>Composite:</strong> {{ "%.1f" | format(match_score.composite_score) }}%</div>
+    {% if match_score.base_score %}<div><strong>Base:</strong> {{ "%.1f" | format(match_score.base_score) }}%</div>{% endif %}
+    {% if match_score.bonus_total %}<div><strong>Bonus:</strong> +{{ "%.1f" | format(match_score.bonus_total) }}</div>{% endif %}
+    {% if match_score.tier %}<div><strong>Tier:</strong> {{ match_score.tier }}</div>{% endif %}
+  </div>
+  {% if match_score.factors %}
+  <table>
+    <thead><tr><th>Factor</th><th>Score</th></tr></thead>
+    <tbody>
+    {% for key, val in match_score.factors.items() %}
+    <tr><td>{{ key | replace("_", " ") | title }}</td><td>{{ val }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ---- Candidate-Search reasoning ---- #}
+{% if search_candidate and search_candidate.match_reasoning %}
+<h2>Search Fit Reasoning <span class="text-small text-muted">(Internal Use Only)</span></h2>
+<div class="card">
+  <p>{{ search_candidate.match_reasoning }}</p>
+</div>
+{% endif %}
+
+{# ---- References ---- #}
+{% if references %}
+<h2>References</h2>
+<table>
+  <thead><tr><th>Name</th><th>Title</th><th>Organization</th><th>Relationship</th></tr></thead>
+  <tbody>
+  {% for ref in references %}
+  <tr>
+    <td>{{ ref.reference_name | d }}</td>
+    <td>{{ ref.reference_title | d }}</td>
+    <td>{{ ref.reference_organization | d }}</td>
+    <td>{{ ref.relationship | d }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% endblock %}
