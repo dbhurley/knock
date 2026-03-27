@@ -14,6 +14,7 @@ import matchRoutes from './routes/match.js';
 import pricingRoutes from './routes/pricing.js';
 import signalRoutes from './routes/signals.js';
 import statsRoutes from './routes/stats.js';
+import intakeRoutes from './routes/intake.js';
 
 const PORT = parseInt(process.env.PORT ?? '3000', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';
@@ -74,6 +75,7 @@ async function main(): Promise<void> {
   await app.register(pricingRoutes);
   await app.register(signalRoutes);
   await app.register(statsRoutes);
+  await app.register(intakeRoutes);
 
   // ─── Connect Redis (lazy) ──────────────────────────────────────────────
   try {

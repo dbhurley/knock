@@ -11,8 +11,8 @@ export async function authenticate(
   request: FastifyRequest,
   reply: FastifyReply,
 ): Promise<void> {
-  // Skip auth for health check
-  if (request.url === '/health') return;
+  // Skip auth for health check and public intake form
+  if (request.url === '/health' || request.url === '/api/v1/intake') return;
 
   if (!API_KEY) {
     request.log.warn('API_KEY env var is not set — auth is disabled');
