@@ -1,0 +1,729 @@
+skill_name: executive_search_workflow
+description: |
+  Complete end-to-end executive search workflow for Knock. This is Janet's primary operational skill.
+  It covers every step from initial inquiry to placement closeout, with Daniel handling the
+  high-touch relationship work (selling, onsite visits, interviews, committee guidance) and
+  Janet handling all operational, administrative, and analytical tasks.
+
+  ROLES:
+    Daniel (Founder/Consultant): Sell the search, run the onsite, interview candidates, guide committee decisions
+    Janet (Office Manager/AI): Everything else — intake, proposals, data collection, sourcing, coordination, closeout
+
+trigger: |
+  When a user mentions:
+  - Starting a new search
+  - New inquiry from a school
+  - Need to find a head of school
+  - Search process or workflow questions
+  - Any stage-specific task (proposal, sourcing, interviews, etc.)
+
+phases:
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: INTAKE AND QUALIFICATION
+  # ═══════════════════════════════════════════════════════════════
+  - phase: intake_and_qualification
+    name: "Intake & Qualification"
+    owner: janet
+    status_code: intake
+    typical_duration: "1-3 days"
+    description: "Process initial inquiry, qualify the opportunity, schedule discovery"
+
+    tasks:
+      - id: parse_inquiry
+        name: "Parse inquiry email/message"
+        description: |
+          Extract from the initial inquiry:
+          - School name → look up in database
+          - Contact name and title (usually board chair or search committee chair)
+          - Position being filled (Head of School, Division Head, etc.)
+          - Salary range (if mentioned)
+          - Timeline/urgency
+          - How they heard about Knock
+        tools: [check_email, search_schools, search_people]
+        output: "Structured inquiry summary with school profile pulled from DB"
+
+      - id: qualify_opportunity
+        name: "Qualify the opportunity"
+        description: |
+          Assess if this is a good fit for Knock:
+          - Is this a private/independent school? (our specialty)
+          - Is the position executive-level? (HOS, division head, etc.)
+          - Is the salary range within our bands? ($70K-$500K+)
+          - Is the timeline reasonable? (minimum 8-10 weeks for a full search)
+          - Any red flags? (school in financial distress, toxic board, etc.)
+        tools: [get_school, get_pricing_quote]
+        output: "Qualification assessment: proceed / pass / need more info"
+
+      - id: send_discovery_scheduling
+        name: "Send discovery scheduling email"
+        description: |
+          Send a warm, professional email from janet@askknock.com:
+          - Thank them for reaching out
+          - Brief intro to Knock and our approach
+          - Propose 2-3 times for a discovery call with Daniel
+          - Include calendar link
+          - Ask for any materials they can share (job description, strategic plan, etc.)
+        tools: [send_email]
+        template: "discovery_scheduling_email"
+
+      - id: confirm_meeting
+        name: "Confirm meeting and prep Daniel"
+        description: |
+          Once meeting is scheduled:
+          - Send confirmation email to school contact
+          - Create a prep brief for Daniel with:
+            - School profile from database
+            - Current HOS info and tenure
+            - Enrollment trends
+            - Financial summary (if available)
+            - Any industry signals about the school
+            - Comparable recent placements
+          - Update search record status to 'intake'
+        tools: [get_school, search_people, get_stats]
+        output: "Meeting confirmed, Daniel briefed"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: PROPOSAL AND CONTRACT
+  # ═══════════════════════════════════════════════════════════════
+  - phase: proposal_and_contract
+    name: "Proposal & Contract"
+    owner: janet
+    daniel_role: "Conducts discovery call, provides inputs for proposal"
+    status_code: profiling
+    typical_duration: "3-7 days"
+
+    tasks:
+      - id: generate_proposal
+        name: "Generate proposal document"
+        description: |
+          After Daniel's discovery call, generate a formal proposal including:
+          - Understanding of the school's needs (from Daniel's notes)
+          - Knock's approach and methodology
+          - Proposed timeline with milestones
+          - Fixed fee based on salary band (from pricing engine)
+          - Deposit amount and payment schedule
+          - Guarantee terms (12-month replacement guarantee)
+          - Team bios (Daniel as lead consultant, Janet as project coordinator)
+          - References from similar placements
+        tools: [get_pricing_quote, list_pricing_bands]
+        output: "Formatted proposal document (Word/PDF)"
+
+      - id: send_proposal
+        name: "Send proposal to school contact"
+        description: |
+          Email the proposal with:
+          - Cover letter summarizing the call and our enthusiasm
+          - Proposal document attached
+          - Note about next steps (board approval)
+          - Offer to present to the full board if helpful
+        tools: [send_email]
+
+      - id: track_board_approval
+        name: "Track board approval"
+        description: |
+          Follow up on the proposal:
+          - Day 3: Soft check-in email ("Any questions?")
+          - Day 7: Follow-up call/email if no response
+          - Day 14: Final follow-up
+          - Track response and any requested modifications
+          - If approved, proceed to contract
+          - If declined, log reason and maintain relationship
+        tools: [send_email, check_email, add_interaction]
+
+      - id: send_contract
+        name: "Send contract for signature"
+        description: |
+          Once board approves:
+          - Generate engagement letter from template
+          - Include: scope, fee, deposit, timeline, confidentiality, guarantee
+          - Send for e-signature (DocuSign or similar)
+          - Follow up until signed
+        tools: [send_email]
+
+      - id: store_contract
+        name: "Store signed contract and create search"
+        description: |
+          Once contract is signed:
+          - Save signed document
+          - Create official search record in database with search number (KNK-YYYY-NNN)
+          - Set status to 'profiling'
+          - Send deposit invoice
+          - Send Daniel the "search is live" notification
+          - Send school contact a welcome email with next steps
+        tools: [create_search, send_email]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: DISCOVERY DATA COLLECTION
+  # ═══════════════════════════════════════════════════════════════
+  - phase: discovery_data_collection
+    name: "Discovery & Data Collection"
+    owner: janet
+    daniel_role: "Conducts onsite visit and focus groups"
+    status_code: profiling
+    typical_duration: "2-3 weeks"
+
+    tasks:
+      - id: generate_survey
+        name: "Generate and distribute stakeholder survey"
+        description: |
+          Create a survey for key stakeholders (board, faculty, parents, students):
+          - What qualities are most important in the next leader?
+          - What are the school's greatest strengths?
+          - What are the most pressing challenges?
+          - What does the ideal candidate look like?
+          - What would make this transition successful?
+          Distribute link to search committee for forwarding
+        tools: [send_email]
+
+      - id: track_survey
+        name: "Track survey completion"
+        description: |
+          Monitor survey responses:
+          - Send reminders at day 3 and day 7
+          - Track response rate by stakeholder group
+          - Flag if response rate is below 50%
+          - Close survey after 10-14 days
+        tools: [send_email, check_email]
+
+      - id: aggregate_survey
+        name: "Aggregate survey results"
+        description: |
+          Compile survey data into a summary report:
+          - Key themes and patterns
+          - Ranked priorities
+          - Areas of consensus and disagreement
+          - Notable quotes (anonymized)
+          - Recommendations for the position profile
+        output: "Survey summary report"
+
+      - id: schedule_onsite
+        name: "Schedule onsite visit"
+        description: |
+          Coordinate Daniel's campus visit:
+          - 1-2 day visit
+          - Schedule focus groups: board, faculty, staff, parents, students
+          - Schedule meetings with departing HOS (if available)
+          - Arrange campus tour
+          - Confirm logistics (travel, accommodations)
+        tools: [send_email]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: ONSITE ANALYSIS
+  # ═══════════════════════════════════════════════════════════════
+  - phase: onsite_analysis
+    name: "Onsite Analysis"
+    owner: janet
+    daniel_role: "Conducts focus groups and interviews onsite"
+    status_code: profiling
+    typical_duration: "1 week"
+
+    tasks:
+      - id: transcribe_focus_groups
+        name: "Transcribe focus group recordings"
+        description: |
+          Process Daniel's focus group recordings:
+          - Transcribe audio/video
+          - Identify key themes per group
+          - Note areas of agreement/disagreement between groups
+          - Flag any sensitive issues
+        output: "Transcripts with thematic annotations"
+
+      - id: merge_data
+        name: "Merge transcripts with survey data"
+        description: |
+          Combine all discovery data:
+          - Survey results
+          - Focus group themes
+          - Daniel's observations and notes
+          - School profile data from database
+          - Financial and enrollment trends
+        output: "Comprehensive discovery synthesis"
+
+      - id: generate_onsite_report
+        name: "Generate onsite report"
+        description: |
+          Create the formal onsite/discovery report:
+          - Executive summary
+          - School overview and context
+          - Stakeholder input summary
+          - Key themes and priorities
+          - Recommended candidate profile
+          - Potential challenges and considerations
+        output: "Onsite report document (Word/PDF)"
+
+      - id: deliver_report
+        name: "Deliver report to board"
+        description: |
+          Send the onsite report to the search committee/board:
+          - Cover email summarizing key findings
+          - Report attached
+          - Request feedback and approval of candidate profile
+          - Schedule call to discuss if needed
+        tools: [send_email]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: OPPORTUNITY PROFILE
+  # ═══════════════════════════════════════════════════════════════
+  - phase: opportunity_profile
+    name: "Opportunity Profile"
+    owner: janet
+    status_code: sourcing
+    typical_duration: "1 week"
+
+    tasks:
+      - id: draft_op
+        name: "Draft Opportunity Profile document"
+        description: |
+          Create the Opportunity Profile (OP) — the marketing document for the position:
+          - About the school (mission, history, culture, programs)
+          - About the community and location
+          - The opportunity (what makes this role exciting)
+          - Desired qualifications and qualities
+          - Compensation overview (band, not specific number)
+          - Application process and timeline
+          - Photos and branding
+        output: "Opportunity Profile draft"
+
+      - id: format_word
+        name: "Generate formatted Word version"
+        description: "Create a professionally formatted Word document version of the OP"
+        output: "OP.docx"
+
+      - id: format_web
+        name: "Generate web version"
+        description: |
+          Create a web-friendly version of the OP:
+          - Clean, responsive HTML
+          - Hosted at askknock.com/searches/[search-number]
+          - Includes application form or email link
+          - SEO-friendly for candidate discovery
+        output: "OP web page"
+
+      - id: approve_op
+        name: "Send OP for approval"
+        description: |
+          Send the draft OP to the search chair for review:
+          - Both Word and web preview versions
+          - Request any edits or additions
+          - Typical turnaround: 2-3 business days
+        tools: [send_email]
+
+      - id: publish_op
+        name: "Publish approved OP"
+        description: |
+          Once approved:
+          - Finalize Word document
+          - Publish web page
+          - Prepare for distribution to candidates
+        output: "Published Opportunity Profile"
+
+      - id: notify_qc
+        name: "Notify QC reviewer"
+        description: "Send the published OP to internal quality review before distribution"
+        tools: [send_email]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: CANDIDATE SOURCING
+  # ═══════════════════════════════════════════════════════════════
+  - phase: candidate_sourcing
+    name: "Candidate Sourcing"
+    owner: janet
+    daniel_role: "Reviews candidate lists, makes personal outreach calls to top targets"
+    status_code: sourcing
+    typical_duration: "3-4 weeks"
+
+    tasks:
+      - id: database_search
+        name: "Search internal database"
+        description: |
+          Use the matching engine to find candidates:
+          - Run match_candidates against search criteria
+          - Score top 50-100 candidates
+          - Identify tier 1 (perfect fit), tier 2 (strong), tier 3 (possible)
+          - Flag any candidates in active searches for other schools (conflict check)
+        tools: [find_candidates, score_candidate, search_people]
+        output: "Ranked candidate list with match scores"
+
+      - id: linkedin_search
+        name: "Search LinkedIn for additional prospects"
+        description: |
+          Expand beyond the database:
+          - Search LinkedIn for profiles matching criteria
+          - Focus on current HOS at similar schools
+          - Look for rising leaders (assistant heads, division heads)
+          - Check leadership program alumni
+          - Add new prospects to database
+        tools: [search_people]
+
+      - id: generate_outreach
+        name: "Generate outreach messages"
+        description: |
+          Create personalized outreach for each candidate tier:
+          - Tier 1: Highly personalized, reference their specific experience
+          - Tier 2: Personalized, highlight school's unique opportunity
+          - Tier 3: General invitation with OP link
+          All messages should be warm, confidential, and professional
+        output: "Outreach message templates per candidate"
+
+      - id: send_exploratory
+        name: "Send exploratory emails with OP"
+        description: |
+          Send outreach emails from janet@askknock.com:
+          - Personalized message per candidate
+          - OP document or web link attached
+          - Clear call to action (reply to express interest, schedule a call)
+          - Confidentiality assurance
+          Batch send with tracking
+        tools: [send_email]
+
+      - id: track_responses
+        name: "Track candidate responses"
+        description: |
+          Monitor responses and categorize:
+          - Interested → move to candidate intake
+          - Want more info → send additional details, schedule call with Daniel
+          - Not interested → log reason, thank them, ask for referrals
+          - No response → follow up at day 5 and day 10
+          Update candidate status in database
+        tools: [check_email, send_email, add_interaction]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: CANDIDATE INTAKE
+  # ═══════════════════════════════════════════════════════════════
+  - phase: candidate_intake
+    name: "Candidate Intake"
+    owner: janet
+    status_code: screening
+    typical_duration: "2-3 weeks (overlaps with sourcing)"
+
+    tasks:
+      - id: collect_materials
+        name: "Collect resumes and submissions"
+        description: |
+          For each interested candidate:
+          - Request resume/CV
+          - Request cover letter or statement of interest
+          - Request list of references
+          - Log receipt of materials
+        tools: [send_email, check_email]
+
+      - id: send_portfolio_instructions
+        name: "Send abbreviated portfolio instructions"
+        description: |
+          Send each candidate the portfolio requirements:
+          - Educational philosophy statement (1-2 pages)
+          - Leadership accomplishments (3-5 highlights)
+          - Response to school-specific questions (from search criteria)
+          - Deadline for submission
+        tools: [send_email]
+
+      - id: score_candidates
+        name: "Score candidate responses"
+        description: |
+          Evaluate each candidate's materials against role criteria:
+          - Education and credentials alignment
+          - Experience relevance
+          - Leadership philosophy fit
+          - Writing quality and communication skills
+          - Overall impression
+          Generate a preliminary score (1-100)
+        tools: [score_candidate]
+        output: "Scored candidate roster"
+
+      - id: generate_summaries
+        name: "Generate candidate summaries"
+        description: |
+          Create a 1-page summary for each scored candidate:
+          - Background overview
+          - Key qualifications
+          - Strengths relative to this search
+          - Potential concerns
+          - Match score and reasoning
+        output: "Candidate summary documents"
+
+      - id: create_profiles
+        name: "Create candidate profiles in system"
+        description: |
+          Ensure each candidate has a complete profile:
+          - Full biographical data
+          - Education history
+          - Career timeline
+          - References
+          - All submitted materials linked
+          - Status set to 'screening' for this search
+        tools: [search_people, update_record]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 8: INTERVIEW SUPPORT
+  # ═══════════════════════════════════════════════════════════════
+  - phase: interview_support
+    name: "Interview Support"
+    owner: janet
+    daniel_role: "Conducts interviews, coaches committee on evaluation"
+    status_code: interviewing
+    typical_duration: "3-4 weeks"
+
+    tasks:
+      - id: generate_rating_tool
+        name: "Generate committee rating tool"
+        description: |
+          Create a structured evaluation form for the search committee:
+          - Rating categories aligned with search criteria
+          - 1-5 scale per category
+          - Space for comments
+          - Overall recommendation (advance / hold / decline)
+          Format: printable PDF and digital form
+        output: "Committee rating tool document"
+
+      - id: build_briefing_packets
+        name: "Build candidate briefing packets"
+        description: |
+          For each candidate advancing to interviews:
+          - Candidate summary (1-pager)
+          - Resume/CV
+          - Portfolio materials
+          - Preliminary reference notes
+          - Suggested interview questions specific to this candidate
+          Compile into a packet per candidate
+        output: "Candidate briefing packets"
+
+      - id: schedule_interviews
+        name: "Schedule interviews"
+        description: |
+          Coordinate interview logistics:
+          - First round: typically 45-60 min video calls
+          - Coordinate availability across committee and candidates
+          - Send calendar invitations
+          - Send candidates interview prep information
+          - Send committee the briefing packets
+        tools: [send_email]
+
+      - id: transcribe_interviews
+        name: "Transcribe interview recordings"
+        description: |
+          Process interview recordings:
+          - Transcribe audio/video
+          - Highlight key responses
+          - Note areas of strength and concern
+          - Compare responses across candidates
+        output: "Interview transcripts with annotations"
+
+      - id: produce_evaluations
+        name: "Produce candidate evaluation reports"
+        description: |
+          After each round of interviews:
+          - Compile committee ratings
+          - Aggregate scores and comments
+          - Generate comparison matrix
+          - Identify top candidates and areas of consensus
+          - Produce evaluation report for committee discussion
+        output: "Candidate evaluation report"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 9: COMMITTEE REVIEW
+  # ═══════════════════════════════════════════════════════════════
+  - phase: committee_review
+    name: "Committee Review"
+    owner: janet
+    daniel_role: "Facilitates committee discussion, guides consensus"
+    status_code: interviewing
+    typical_duration: "1 week"
+
+    tasks:
+      - id: generate_dashboard
+        name: "Generate meeting dashboard"
+        description: |
+          Create a visual dashboard for the committee meeting:
+          - All candidates side-by-side
+          - Rating scores by category
+          - Committee member individual ratings
+          - Key strengths and concerns per candidate
+          - Recommended discussion points
+        output: "Committee review dashboard"
+
+      - id: record_decisions
+        name: "Record red/yellow/green decisions"
+        description: |
+          During/after committee meeting:
+          - Record each candidate's status:
+            🟢 Green = advance to finalist
+            🟡 Yellow = hold / need more info
+            🔴 Red = decline
+          - Note specific feedback and reasoning
+          - Update candidate status in database
+        tools: [update_record]
+
+      - id: advance_green
+        name: "Advance green candidates"
+        description: |
+          For candidates marked green:
+          - Update status to 'finalist'
+          - Notify Daniel
+          - Begin finalist coordination
+          For yellow:
+          - Schedule follow-up (additional interview, reference check, etc.)
+          For red:
+          - Send professional decline email
+          - Log feedback for future reference
+        tools: [send_email, update_record]
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 10: FINALIST COORDINATION
+  # ═══════════════════════════════════════════════════════════════
+  - phase: finalist_coordination
+    name: "Finalist Coordination"
+    owner: janet
+    daniel_role: "Accompanies finalists on campus visits, coaches on presentations"
+    status_code: finalist
+    typical_duration: "2-3 weeks"
+
+    tasks:
+      - id: schedule_campus_visits
+        name: "Schedule finalist campus visits"
+        description: |
+          For each finalist (typically 2-3):
+          - Coordinate 1-2 day campus visit
+          - Schedule meetings with board, faculty, staff, parents, students
+          - Arrange community tours
+          - Plan social events (dinner with board, etc.)
+          - Handle travel and accommodation logistics
+        tools: [send_email]
+
+      - id: distribute_materials
+        name: "Distribute interview schedules and materials"
+        description: |
+          Send to finalists:
+          - Detailed visit schedule
+          - Who they'll be meeting and background on each person
+          - School materials (strategic plan, annual report, etc.)
+          - Presentation expectations (if applicable)
+          Send to committee:
+          - Updated candidate packets
+          - Rating tools for each session
+          - Visit schedule
+        tools: [send_email]
+
+      - id: deep_references
+        name: "Conduct deep reference checks"
+        description: |
+          For each finalist:
+          - Contact 5-8 references (mix of supervisors, peers, reports, board)
+          - Structured reference questions aligned with search criteria
+          - Look for patterns across references
+          - Flag any concerns
+          - Compile reference summary report
+        tools: [send_email, check_email, add_interaction]
+        output: "Reference check reports"
+
+      - id: collect_feedback
+        name: "Collect committee feedback"
+        description: |
+          After each campus visit:
+          - Distribute feedback forms to all who met the candidate
+          - Collect and compile responses within 48 hours
+          - Generate comparative feedback report
+          - Present to search committee
+        tools: [send_email, check_email]
+        output: "Finalist feedback compilation"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 11: PLACEMENT CLOSEOUT
+  # ═══════════════════════════════════════════════════════════════
+  - phase: placement_closeout
+    name: "Placement & Closeout"
+    owner: janet
+    daniel_role: "Supports offer negotiation, counsels selected candidate"
+    status_code: offer
+    typical_duration: "1-2 weeks"
+
+    tasks:
+      - id: support_offer
+        name: "Support offer process"
+        description: |
+          Once committee selects their candidate:
+          - Provide compensation benchmark data
+          - Draft talking points for offer conversation
+          - Prepare offer letter template
+          - Support negotiation as needed
+        tools: [get_pricing_quote]
+
+      - id: receive_agreement
+        name: "Receive signed placement agreement"
+        description: |
+          Once candidate accepts:
+          - Confirm signed offer letter received
+          - Update search status to 'placed'
+          - Record placement details (salary, start date, contract term)
+          - Notify declined finalists with grace and professionalism
+        tools: [update_record, send_email]
+
+      - id: trigger_invoice
+        name: "Generate and send final invoice"
+        description: |
+          Calculate and send the balance due:
+          - Total fee (from pricing band)
+          - Less deposit already received
+          - Balance due upon placement
+          - Payment terms: net 30
+          - Send invoice to school's business office
+        tools: [send_email]
+
+      - id: update_records
+        name: "Update all records"
+        description: |
+          Comprehensive record update:
+          - Search record: status → 'placed', placement details
+          - Person record: new current position, school link
+          - School record: new HOS linked, transition date
+          - Placement record: created with all details
+          - School leadership history: updated
+          - Declined candidates: status reset to 'active'
+        tools: [update_record]
+
+      - id: announce_placement
+        name: "Support announcement"
+        description: |
+          Help school with the announcement:
+          - Draft announcement copy
+          - Suggest communication timeline
+          - Offer to share on Knock channels
+        tools: [send_email]
+
+      - id: schedule_followups
+        name: "Schedule follow-up check-ins"
+        description: |
+          Set up the guarantee period monitoring:
+          - 30-day check-in with placed candidate
+          - 30-day check-in with school
+          - 90-day check-in
+          - 6-month formal review
+          - 12-month formal review (guarantee period ends)
+          Create calendar events and reminders
+        tools: [send_email]
+
+# ═══════════════════════════════════════════════════════════════
+# WORKFLOW METADATA
+# ═══════════════════════════════════════════════════════════════
+status_transitions:
+  intake: [profiling, cancelled]
+  profiling: [sourcing, on_hold, cancelled]
+  sourcing: [screening, on_hold, cancelled]
+  screening: [presenting, sourcing, on_hold, cancelled]
+  presenting: [interviewing, screening, on_hold, cancelled]
+  interviewing: [finalist, presenting, on_hold, cancelled]
+  finalist: [offer, interviewing, on_hold, cancelled]
+  offer: [placed, finalist, on_hold, cancelled]
+  placed: []  # terminal
+  on_hold: [intake, profiling, sourcing, screening, presenting, interviewing, finalist, cancelled]
+  cancelled: []  # terminal
+
+typical_total_duration: "10-16 weeks"
+
+success_metrics:
+  - "Time to placement (target: 12-14 weeks)"
+  - "Candidate retention at 12 months (target: 95%+)"
+  - "Client satisfaction score (target: 4.5+/5)"
+  - "Candidate satisfaction score (target: 4.5+/5)"
+  - "Candidates presented per search (target: 4-6)"
+  - "Acceptance rate on first-choice candidate (target: 80%+)"
