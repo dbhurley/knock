@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Start a Search | Knock Executive Search</title>
+    <meta name="description" content="Begin your executive search with Knock. Fixed-price recruiting for Heads of School and senior leadership at private and independent schools.">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafaf8; color: #1a1a1a; }
+        header { text-align: center; padding: 2.5rem 1rem 1.5rem; border-bottom: 1px solid #eee; }
+        header a { text-decoration: none; color: #1a1a1a; }
+        .logo { font-size: 2rem; font-weight: 800; letter-spacing: 0.15em; }
+        .logo span { color: #b8860b; }
+        header p { color: #888; font-size: 0.85rem; margin-top: 0.3rem; }
+        main { max-width: 680px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+        h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .intro { color: #666; line-height: 1.6; margin-bottom: 2rem; font-size: 0.95rem; }
+        .section-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: #b8860b; font-weight: 700; margin: 2rem 0 1rem; padding-bottom: 0.4rem; border-bottom: 2px solid #f0e6d0; }
+        .field { margin-bottom: 1.2rem; }
+        label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; color: #333; }
+        label .req { color: #b8860b; }
+        input, select, textarea {
+            width: 100%; padding: 0.7rem 0.9rem; border: 1.5px solid #ddd; border-radius: 6px;
+            font-size: 0.92rem; font-family: inherit; background: #fff; transition: border-color 0.2s;
+        }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #b8860b; }
+        textarea { resize: vertical; min-height: 100px; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        @media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
+        .submit-btn {
+            display: block; width: 100%; padding: 0.9rem; margin-top: 2rem;
+            background: #b8860b; color: white; border: none; border-radius: 6px;
+            font-size: 1rem; font-weight: 700; letter-spacing: 0.03em; cursor: pointer;
+            transition: background 0.2s;
+        }
+        .submit-btn:hover { background: #9a7209; }
+        .submit-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .error-msg { color: #c0392b; font-size: 0.8rem; margin-top: 0.25rem; display: none; }
+        .success-overlay {
+            display: none; position: fixed; inset: 0; background: rgba(250,250,248,0.97);
+            z-index: 100; justify-content: center; align-items: center; flex-direction: column;
+            text-align: center; padding: 2rem;
+        }
+        .success-overlay.show { display: flex; }
+        .success-overlay h2 { font-size: 1.8rem; margin-bottom: 0.5rem; color: #1a1a1a; }
+        .success-overlay .check { font-size: 3rem; margin-bottom: 1rem; }
+        .success-overlay p { color: #666; max-width: 400px; line-height: 1.6; }
+        .success-overlay .search-num { font-family: monospace; background: #f5f0e8; padding: 0.3rem 0.8rem; border-radius: 4px; color: #b8860b; font-weight: 700; margin: 1rem 0; display: inline-block; }
+        .success-overlay a { color: #b8860b; text-decoration: none; margin-top: 1.5rem; display: inline-block; }
+        footer { text-align: center; padding: 2rem; font-size: 0.8rem; color: #aaa; border-top: 1px solid #eee; }
+        footer a { color: #b8860b; text-decoration: none; }
+        .band-info { font-size: 0.78rem; color: #888; margin-top: 0.2rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/"><div class="logo">KN<span>O</span>CK</div></a>
+        <p>Executive Search for Independent Schools</p>
+    </header>
+
+    <main>
+        <h1>Start a Search</h1>
+        <p class="intro">Tell us about your school and the position you're looking to fill. Janet, our search coordinator, will review your inquiry and be in touch within 24 hours.</p>
+
+        <form id="intake-form" novalidate>
+            <div class="section-title">Your School</div>
+
+            <div class="field">
+                <label>School Name <span class="req">*</span></label>
+                <input type="text" name="school_name" required placeholder="e.g., Greenfield Academy">
+            </div>
+
+            <div class="row">
+                <div class="field">
+                    <label>City <span class="req">*</span></label>
+                    <input type="text" name="city" required>
+                </div>
+                <div class="field">
+                    <label>State <span class="req">*</span></label>
+                    <select name="state" required>
+                        <option value="">Select state</option>
+                        <option>AL</option><option>AK</option><option>AZ</option><option>AR</option><option>CA</option>
+                        <option>CO</option><option>CT</option><option>DE</option><option>DC</option><option>FL</option>
+                        <option>GA</option><option>HI</option><option>ID</option><option>IL</option><option>IN</option>
+                        <option>IA</option><option>KS</option><option>KY</option><option>LA</option><option>ME</option>
+                        <option>MD</option><option>MA</option><option>MI</option><option>MN</option><option>MS</option>
+                        <option>MO</option><option>MT</option><option>NE</option><option>NV</option><option>NH</option>
+                        <option>NJ</option><option>NM</option><option>NY</option><option>NC</option><option>ND</option>
+                        <option>OH</option><option>OK</option><option>OR</option><option>PA</option><option>RI</option>
+                        <option>SC</option><option>SD</option><option>TN</option><option>TX</option><option>UT</option>
+                        <option>VT</option><option>VA</option><option>WA</option><option>WV</option><option>WI</option>
+                        <option>WY</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="section-title">Your Contact Information</div>
+
+            <div class="row">
+                <div class="field">
+                    <label>Your Name <span class="req">*</span></label>
+                    <input type="text" name="contact_name" required>
+                </div>
+                <div class="field">
+                    <label>Your Title</label>
+                    <input type="text" name="contact_title" placeholder="e.g., Board Chair">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="field">
+                    <label>Email <span class="req">*</span></label>
+                    <input type="email" name="contact_email" required>
+                    <div class="error-msg" id="email-error">Please enter a valid email address</div>
+                </div>
+                <div class="field">
+                    <label>Phone</label>
+                    <input type="tel" name="contact_phone" placeholder="(555) 555-5555">
+                </div>
+            </div>
+
+            <div class="section-title">The Position</div>
+
+            <div class="field">
+                <label>Position to Fill <span class="req">*</span></label>
+                <select name="position_category" required>
+                    <option value="">Select position</option>
+                    <option value="head_of_school">Head of School / Headmaster</option>
+                    <option value="division_head">Division Head (Lower/Middle/Upper)</option>
+                    <option value="academic_dean">Academic Dean / Dean of Faculty</option>
+                    <option value="cfo">CFO / Business Manager</option>
+                    <option value="admissions_director">Director of Admissions / Enrollment</option>
+                    <option value="development_director">Director of Advancement / Development</option>
+                    <option value="athletic_director">Athletic Director</option>
+                    <option value="technology_director">Technology Director / CTO</option>
+                    <option value="dei_officer">Chief Diversity Officer / DEI Director</option>
+                    <option value="communications_director">Communications / Marketing Director</option>
+                    <option value="other">Other Executive Position</option>
+                </select>
+            </div>
+
+            <div class="field" id="other-position-field" style="display:none;">
+                <label>Please specify the position</label>
+                <input type="text" name="position_other">
+            </div>
+
+            <div class="row">
+                <div class="field">
+                    <label>Approximate Salary Range <span class="req">*</span></label>
+                    <select name="salary_band" required>
+                        <option value="">Select range</option>
+                        <option value="band_a">$70,000 - $100,000</option>
+                        <option value="band_b">$100,000 - $150,000</option>
+                        <option value="band_c">$150,000 - $200,000</option>
+                        <option value="band_d">$200,000 - $275,000</option>
+                        <option value="band_e">$275,000 - $375,000</option>
+                        <option value="band_f">$375,000 - $500,000</option>
+                        <option value="band_g">$500,000+</option>
+                    </select>
+                    <div class="band-info" id="fee-display"></div>
+                </div>
+                <div class="field">
+                    <label>Target Start Date</label>
+                    <input type="date" name="target_start_date">
+                </div>
+            </div>
+
+            <div class="field">
+                <label>Search Urgency</label>
+                <select name="search_urgency">
+                    <option value="standard">Standard (10-16 weeks)</option>
+                    <option value="immediate">Immediate (expedited)</option>
+                    <option value="flexible">Flexible (no rush)</option>
+                </select>
+            </div>
+
+            <div class="section-title">Tell Us More</div>
+
+            <div class="field">
+                <label>Brief Description of the Opportunity</label>
+                <textarea name="description" placeholder="What makes this an exciting opportunity? Any context about the transition?"></textarea>
+            </div>
+
+            <div class="field">
+                <label>Specific Requirements or Preferences</label>
+                <textarea name="requirements" placeholder="Any must-haves for the ideal candidate? Experience with boarding, faith-based, specific enrollment size, etc."></textarea>
+            </div>
+
+            <div class="field">
+                <label>How Did You Hear About Knock?</label>
+                <select name="referral_source">
+                    <option value="">Select one</option>
+                    <option value="referral">Referral from a colleague</option>
+                    <option value="nais">NAIS / conference</option>
+                    <option value="web_search">Web search</option>
+                    <option value="linkedin">LinkedIn</option>
+                    <option value="previous_client">Previous Knock client</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+
+            <button type="submit" class="submit-btn" id="submit-btn">Submit Inquiry</button>
+        </form>
+    </main>
+
+    <div class="success-overlay" id="success">
+        <div class="check">&#10003;</div>
+        <h2>Thank You!</h2>
+        <p>Your inquiry has been received. Janet will review the details and be in touch within 24 hours to discuss next steps.</p>
+        <div class="search-num" id="search-number"></div>
+        <a href="/">Back to Knock</a>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Knock Executive Search &middot; <a href="mailto:hello@askknock.com">hello@askknock.com</a></p>
+    </footer>
+
+    <script>
+        const fees = {
+            band_a: '$20,000', band_b: '$30,000', band_c: '$40,000',
+            band_d: '$55,000', band_e: '$75,000', band_f: '$100,000', band_g: '$125,000'
+        };
+
+        document.querySelector('[name="salary_band"]').addEventListener('change', function() {
+            const display = document.getElementById('fee-display');
+            display.textContent = this.value ? 'Fixed search fee: ' + fees[this.value] : '';
+        });
+
+        document.querySelector('[name="position_category"]').addEventListener('change', function() {
+            document.getElementById('other-position-field').style.display = this.value === 'other' ? 'block' : 'none';
+        });
+
+        document.getElementById('intake-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const btn = document.getElementById('submit-btn');
+            btn.disabled = true;
+            btn.textContent = 'Submitting...';
+
+            const data = Object.fromEntries(new FormData(this));
+
+            try {
+                const res = await fetch('https://api.askknock.com/api/v1/intake', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.ok) {
+                    const result = await res.json();
+                    const numEl = document.getElementById('search-number');
+                    if (result.search_number) numEl.textContent = 'Reference: ' + result.search_number;
+                    document.getElementById('success').classList.add('show');
+                } else {
+                    // Fallback: send via email
+                    const mailto = 'mailto:janet@askknock.com?subject=New Search Inquiry: ' +
+                        encodeURIComponent(data.school_name) +
+                        '&body=' + encodeURIComponent(
+                            'School: ' + data.school_name + '\n' +
+                            'Location: ' + data.city + ', ' + data.state + '\n' +
+                            'Contact: ' + data.contact_name + ' (' + data.contact_email + ')\n' +
+                            'Position: ' + data.position_category + '\n' +
+                            'Salary Band: ' + data.salary_band + '\n\n' +
+                            data.description
+                        );
+                    window.location.href = mailto;
+                }
+            } catch (err) {
+                // API unavailable — fallback to email
+                const mailto = 'mailto:janet@askknock.com?subject=New Search Inquiry: ' +
+                    encodeURIComponent(data.school_name);
+                window.location.href = mailto;
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Submit Inquiry';
+        });
+    </script>
+</body>
+</html>
