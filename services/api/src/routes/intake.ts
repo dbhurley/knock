@@ -47,25 +47,25 @@ export default async function intakeRoutes(app: FastifyInstance): Promise<void> 
 
     let schoolId: string;
     if (school) {
-      schoolId = school.id;
+      schoolId = String(school.id);
     } else {
       const newSchool = await queryOne(
         `INSERT INTO schools (name, name_normalized, city, state, is_private, is_independent, data_source)
          VALUES ($1, $2, $3, $4, TRUE, TRUE, 'intake_form') RETURNING id`,
         [b.school_name.trim(), b.school_name.toLowerCase().trim(), b.city.trim(), b.state.trim()]
       );
-      schoolId = newSchool!.id;
+      schoolId = String(newSchool!.id);
     }
 
     // 2. Find or create contact person
-    let person = await queryOne(
+    const person = await queryOne(
       `SELECT id FROM people WHERE LOWER(name_normalized) = LOWER($1) LIMIT 1`,
       [b.contact_name.toLowerCase().trim()]
     );
 
     let personId: string;
     if (person) {
-      personId = person.id;
+      personId = String(person.id);
       await execute(
         `UPDATE people SET email_primary = COALESCE(email_primary, $1), phone_primary = COALESCE(phone_primary, $2),
          current_organization = $3, current_title = COALESCE($4, current_title), updated_at = NOW() WHERE id = $5`,
@@ -83,7 +83,7 @@ export default async function intakeRoutes(app: FastifyInstance): Promise<void> 
         [firstName, lastName, b.contact_name.trim(), b.contact_name.toLowerCase().trim(),
          b.contact_email, b.contact_phone || null, b.contact_title || null, b.school_name, schoolId]
       );
-      personId = newPerson!.id;
+      personId = String(newPerson!.id);
     }
 
     // 3. Generate search number
@@ -92,7 +92,7 @@ export default async function intakeRoutes(app: FastifyInstance): Promise<void> 
       `SELECT COUNT(*) as c FROM searches WHERE EXTRACT(YEAR FROM created_at) = $1`,
       [year]
     );
-    const num = parseInt(countResult?.c ?? '0', 10) + 1;
+    const num = parseInt(String(countResult?.c ?? '0'), 10) + 1;
     const searchNumber = `KNK-${year}-${String(num).padStart(3, '0')}`;
 
     // 4. Get pricing band info
@@ -150,7 +150,7 @@ export default async function intakeRoutes(app: FastifyInstance): Promise<void> 
       ].filter(Boolean).join('\n');
 
       try {
-        await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
+        await globalThis.fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' }),
