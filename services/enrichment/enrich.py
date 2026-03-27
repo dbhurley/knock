@@ -112,6 +112,16 @@ ENRICHERS = {
         'description': 'Educational Leadership Program Tracker',
         'requires_file': False,  # Optional file for graduate imports
     },
+    'mission': {
+        'module': 'enrichment.enrichers.school_mission',
+        'description': 'School Mission & Culture Scraper',
+        'requires_file': False,
+    },
+    'social': {
+        'module': 'enrichment.enrichers.school_social',
+        'description': 'School Social Media Profile Scraper',
+        'requires_file': False,
+    },
 }
 
 
