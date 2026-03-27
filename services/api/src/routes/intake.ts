@@ -156,7 +156,7 @@ export default async function intakeRoutes(app: FastifyInstance): Promise<void> 
           body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' }),
         });
       } catch (e) {
-        request.log.error('Telegram notification failed:', e);
+        request.log.error(`Telegram notification failed: ${String(e)}`);
       }
     }
 
