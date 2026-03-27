@@ -1,0 +1,246 @@
+# OpenClaw Configuration for Janet - Knock Executive Search
+# https://janet.askknock.com
+
+agent:
+  name: Janet
+  description: "Office Manager & Research Associate for Knock Executive Search"
+  model: "anthropic/claude-sonnet-4-6"
+  system_prompt_file: "./prompts/system.md"
+  max_tokens: 4096
+  temperature: 0.7
+
+gateway:
+  host: janet.askknock.com
+  port: 3000
+  token_auth: true
+  token: "${OPENCLAW_TOKEN}"
+  pairing_mode: permissive
+  cors_origins:
+    - "https://askknock.com"
+    - "https://janet.askknock.com"
+
+telegram:
+  bot_token: "${TELEGRAM_BOT_TOKEN}"
+  bot_username: "@KnockJanetBot"
+  bot_display_name: "Janet - Knock Search"
+  pairing_mode: permissive
+  allowed_updates:
+    - message
+    - callback_query
+  commands:
+    - command: start
+      description: "Introduction and capabilities overview"
+    - command: help
+      description: "List available commands"
+    - command: search
+      description: "Start a new search intake"
+    - command: find
+      description: "Find candidates or schools"
+    - command: status
+      description: "Check status of active searches"
+    - command: school
+      description: "Look up a school"
+    - command: candidate
+      description: "Look up a candidate"
+    - command: report
+      description: "Generate a report"
+    - command: signal
+      description: "Check recent industry signals"
+    - command: update
+      description: "Update a record"
+    - command: stats
+      description: "Database statistics"
+
+database:
+  url: "${DATABASE_URL}"
+  pool_size: 10
+  ssl: false
+
+cache:
+  url: "${REDIS_URL}"
+  prefix: "knock:"
+  default_ttl: 3600
+
+api:
+  base_url: "http://localhost:4000/api/v1"
+  auth_header: "X-API-Key"
+  auth_token: "${API_KEY}"
+
+tools:
+  - name: query_schools
+    description: "Search schools database with filters"
+    type: http
+    method: GET
+    url: "${API_BASE_URL}/schools"
+    parameters:
+      name: { type: string, in: query }
+      state: { type: string, in: query }
+      school_type: { type: string, in: query }
+      min_enrollment: { type: integer, in: query }
+      max_enrollment: { type: integer, in: query }
+      boarding: { type: boolean, in: query }
+      nais_member: { type: boolean, in: query }
+      tier: { type: string, in: query }
+      free_text: { type: string, in: query }
+      page: { type: integer, in: query, default: 1 }
+      per_page: { type: integer, in: query, default: 20 }
+
+  - name: get_school_detail
+    description: "Get full details for a specific school"
+    type: http
+    method: GET
+    url: "${API_BASE_URL}/schools/{school_id}"
+    parameters:
+      school_id: { type: string, in: path, required: true }
+
+  - name: query_people
+    description: "Search people/candidates database with filters"
+    type: http
+    method: GET
+    url: "${API_BASE_URL}/people"
+    parameters:
+      name: { type: string, in: query }
+      role: { type: string, in: query }
+      state: { type: string, in: query }
+      career_stage: { type: string, in: query }
+      specializations: { type: string, in: query }
+      status: { type: string, in: query }
+      min_rating: { type: integer, in: query }
+      free_text: { type: string, in: query }
+      page: { type: integer, in: query, default: 1 }
+      per_page: { type: integer, in: query, default: 20 }
+
+  - name: get_person_detail
+    description: "Get full details for a specific person including history"
+    type: http
+    method: GET
+    url: "${API_BASE_URL}/people/{person_id}"
+    parameters:
+      person_id: { type: string, in: path, required: true }
+
+  - name: create_search
+    description: "Create a new search engagement record"
+    type: http
+    method: POST
+    url: "${API_BASE_URL}/searches"
+    parameters:
+      school_id: { type: string, in: body, required: true }
+      position_title: { type: string, in: body, required: true }
+      position_category: { type: string, in: body, required: true }
+      salary_range_low: { type: integer, in: body }
+      salary_range_high: { type: integer, in: body }
+      fee_amount: { type: integer, in: body }
+      deposit_amount: { type: integer, in: body }
+      start_date: { type: string, in: body }
+      target_fill_date: { type: string, in: body }
+      required_qualifications: { type: object, in: body }
+      preferred_qualifications: { type: object, in: body }
+      notes: { type: string, in: body }
+
+  - name: update_search_status
+    description: "Update the status of an active search"
+    type: http
+    method: PATCH
+    url: "${API_BASE_URL}/searches/{search_id}"
+    parameters:
+      search_id: { type: string, in: path, required: true }
+      status: { type: string, in: body }
+      notes: { type: string, in: body }
+
+  - name: get_active_searches
+    description: "List all active search engagements"
+    type: http
+    method: GET
+    url: "${API_BASE_URL}/searches"
+    parameters:
+      status: { type: string, in: query, default: "active" }
+      page: { type: integer, in: query, default: 1 }
+      per_page: { type: integer, in: query, default: 50 }
+
+  - name: score_candidate
+    description: "Calculate match score between a candidate and a search"
+    type: http
+    method: POST
+    url: "${API_BASE_URL}/match/score"
+    parameters:
+      person_id: { type: string, in: body, required: true }
+      search_id: { type: string, in: body, required: true }
+
+  - name: find_candidates
+    description: "Find and rank candidates for a search"
+    type: http
+    method: POST
+    url: "${API_BASE_URL}/match/find"
+    parameters:
+      search_id: { type: string, in: body, required: true }
+      limit: { type: integer, in: body, default: 50 }
+      min_score: { type: integer, in: body, default: 40 }
+
+  - name: add_interaction
+    description: "Log an interaction with a person"
+    type: http
+    method: POST
+    url: "${API_BASE_URL}/people/{person_id}/interactions"
+    parameters:
+      person_id: { type: string, in: path, required: true }
+      interaction_type: { type: string, in: body, required: true }
+      search_id: { type: string, in: body }
+      notes: { type: string, in: body }
+      sentiment: { type: string, in: body }
+      follow_up_date: { type: string, in: body }
+      follow_up_action: { type: string, in: body }
+
+  - name: get_industry_signals
+    description: "Retrieve recent industry signals and news"
+    type: http
+    method: GET
+    url: "${API_BASE_URL}/signals"
+    parameters:
+      days_back: { type: integer, in: query, default: 30 }
+      signal_type: { type: string, in: query }
+      unactioned_only: { type: boolean, in: query }
+      state: { type: string, in: query }
+
+  - name: get_pricing_quote
+    description: "Get a pricing quote for a salary range"
+    type: http
+    method: GET
+    url: "${API_BASE_URL}/pricing/quote"
+    parameters:
+      salary_low: { type: integer, in: query }
+      salary_high: { type: integer, in: query }
+
+  - name: get_database_stats
+    description: "Get database statistics and record counts"
+    type: http
+    method: GET
+    url: "${API_BASE_URL}/stats"
+
+skills:
+  - file: "./skills/intake_interview.yaml"
+  - file: "./skills/candidate_search.yaml"
+  - file: "./skills/school_lookup.yaml"
+  - file: "./skills/match_score.yaml"
+  - file: "./skills/generate_report.yaml"
+  - file: "./skills/update_record.yaml"
+  - file: "./skills/industry_monitor.yaml"
+
+workflows:
+  - file: "./workflows/search-lifecycle.yaml"
+
+prompts:
+  system: "./prompts/system.md"
+  intake_template: "./prompts/intake-template.md"
+  candidate_profile: "./prompts/candidate-profile.md"
+
+logging:
+  level: info
+  format: json
+  output: stdout
+
+health:
+  endpoint: /health
+  checks:
+    - database
+    - cache
+    - api

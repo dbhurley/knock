@@ -1,0 +1,198 @@
+skill_name: update_record
+description: >
+  Add or update information in the Knock database through conversational
+  interaction. Supports creating and modifying school, person, search,
+  and interaction records. Always confirms changes before committing.
+
+trigger:
+  patterns:
+    - "update record"
+    - "add a school"
+    - "add a candidate"
+    - "new person"
+    - "update school"
+    - "change status"
+    - "log an interaction"
+    - "add a note"
+    - "/update"
+  description: >
+    Activate when a user wants to create or modify a database record.
+
+parameters:
+  - name: entity_type
+    type: string
+    required: true
+    description: "Type of record: school, person, search, interaction"
+  - name: entity_id
+    type: string
+    required: false
+    description: UUID of existing record to update (omit for new records)
+  - name: fields
+    type: object
+    required: false
+    description: Key-value pairs of fields to update
+
+entity_types:
+  - id: school
+    name: School Record
+    tools: [query_schools, get_school_detail]
+    create_fields:
+      required:
+        - name
+        - city
+        - state
+      optional:
+        - school_type
+        - grade_low
+        - grade_high
+        - enrollment_total
+        - coed_status
+        - boarding_status
+        - religious_affiliation
+        - nais_member
+        - website
+        - phone
+        - tier
+        - tags
+        - notes
+    update_fields:
+      - Any create field
+      - last_head_change
+      - next_head_change_expected
+      - tuition_low
+      - tuition_high
+      - endowment_size
+      - student_teacher_ratio
+
+  - id: person
+    name: Person Record
+    tools: [query_people, get_person_detail]
+    create_fields:
+      required:
+        - full_name
+      optional:
+        - first_name
+        - last_name
+        - prefix
+        - suffix
+        - email_primary
+        - phone_primary
+        - city
+        - state
+        - current_title
+        - current_organization
+        - current_school_id
+        - career_stage
+        - primary_role
+        - specializations
+        - school_type_experience
+        - candidate_status
+        - linkedin_url
+        - notes
+        - tags
+    update_fields:
+      - Any create field
+      - willing_to_relocate
+      - preferred_regions
+      - preferred_states
+      - compensation_expectation
+      - knock_rating
+      - knock_notes
+
+  - id: search
+    name: Search Record
+    tools: [get_active_searches, create_search, update_search_status]
+    create_fields:
+      required:
+        - school_id
+        - position_title
+        - position_category
+        - salary_range_low
+        - salary_range_high
+      optional:
+        - search_type
+        - start_date
+        - target_fill_date
+        - fee_amount
+        - deposit_amount
+        - primary_contact_person_id
+        - search_committee_notes
+        - required_qualifications
+        - preferred_qualifications
+        - preferred_school_types
+        - required_education_level
+        - notes
+    status_transitions:
+      - from: intake
+        to: profiling
+      - from: profiling
+        to: sourcing
+      - from: sourcing
+        to: screening
+      - from: screening
+        to: presenting
+      - from: presenting
+        to: interviewing
+      - from: interviewing
+        to: finalist
+      - from: finalist
+        to: offer
+      - from: offer
+        to: placed
+      - from: offer
+        to: closed_no_fill
+      - from: any
+        to: on_hold
+      - from: any
+        to: cancelled
+
+  - id: interaction
+    name: Interaction Log
+    tools: [add_interaction]
+    create_fields:
+      required:
+        - person_id
+        - interaction_type
+      optional:
+        - search_id
+        - notes
+        - sentiment
+        - follow_up_date
+        - follow_up_action
+    interaction_types:
+      - phone_call
+      - email
+      - meeting
+      - telegram_chat
+      - linkedin_message
+      - reference_check
+      - interview
+      - site_visit
+      - note
+
+workflow:
+  steps:
+    - Identify entity type and whether this is a create or update
+    - If update, look up the existing record and confirm identity
+    - Collect the new or changed information conversationally
+    - Summarize all changes in a clear format
+    - Ask for explicit confirmation before writing
+    - Execute the database operation
+    - Confirm success and show the updated record summary
+
+guardrails:
+  - Always confirm before creating or updating records
+  - Validate data types and formats before writing
+  - For status transitions, enforce valid transition rules
+  - Never delete records through this skill (deletion requires admin action)
+  - Log all modifications with the user identity and timestamp
+  - For person records, validate email format and phone format if provided
+  - Warn if creating a potentially duplicate record (fuzzy name match)
+
+error_handling:
+  - condition: Record not found for update
+    action: Offer to search for the record or create a new one
+  - condition: Invalid status transition
+    action: Explain valid transitions from the current status
+  - condition: Potential duplicate detected
+    action: Show existing record and ask user to confirm create vs update

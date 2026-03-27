@@ -1,0 +1,149 @@
+skill_name: candidate_search
+description: >
+  Search the Knock database for candidates matching specific criteria.
+  Accepts natural language queries and translates them into structured
+  database queries. Returns ranked results with match reasoning.
+
+trigger:
+  patterns:
+    - "find candidates"
+    - "search for"
+    - "who do we have"
+    - "candidate pool"
+    - "look for people"
+    - "anyone with experience"
+    - "/find"
+  description: >
+    Activate when a user asks to find candidates, people, or search the
+    candidate database.
+
+parameters:
+  - name: position_type
+    type: string
+    required: false
+    description: >
+      Type of position: head_of_school, division_head, academic_dean,
+      cfo, admissions_director, development_director, athletic_director,
+      technology_director, dei_officer, communications_director
+  - name: location_preference
+    type: string
+    required: false
+    description: >
+      Geographic preference. Can be a state (MA), region (northeast),
+      city, or "open to relocation".
+  - name: school_type
+    type: string
+    required: false
+    description: >
+      Type of school experience sought: day, boarding, day_boarding,
+      k12, k8, 9_12, coed, boys, girls
+  - name: experience_years
+    type: integer
+    required: false
+    description: Minimum years of leadership experience
+  - name: specializations
+    type: array
+    items: string
+    required: false
+    description: >
+      Desired areas of expertise: fundraising, dei, stem, arts,
+      boarding_life, enrollment, financial_management, accreditation,
+      building_programs, athletics, international
+  - name: education_level
+    type: string
+    required: false
+    description: "Minimum education: masters, doctorate, edd, phd"
+  - name: career_stage
+    type: string
+    required: false
+    description: "Career stage filter: emerging, mid_career, senior, veteran"
+  - name: salary_range
+    type: string
+    required: false
+    description: "Expected compensation range, e.g., '200-250k'"
+  - name: min_rating
+    type: integer
+    required: false
+    description: Minimum Knock rating (1-5)
+  - name: candidate_status
+    type: string
+    required: false
+    default: "active,passive"
+    description: "Candidate status filter: active, passive, not_looking, placed"
+  - name: search_id
+    type: string
+    required: false
+    description: >
+      If searching for a specific search engagement, provide the search ID
+      to automatically apply the search criteria and exclude rejected candidates.
+  - name: free_text
+    type: string
+    required: false
+    description: >
+      Natural language query for full-text search across names, titles,
+      organizations, summaries, and notes.
+
+tools:
+  - query_people
+  - get_person_detail
+  - score_candidate
+
+algorithm:
+  steps:
+    - id: parse_query
+      description: >
+        Parse the natural language request into structured parameters.
+        Identify explicit and implicit criteria.
+    - id: query_database
+      description: >
+        Execute query against PostgreSQL with full-text search and filters.
+        Use pg_trgm for fuzzy name matching.
+    - id: score_results
+      description: >
+        If a search_id is provided, score each result against the search
+        criteria using the weighted scoring system. Otherwise, rank by
+        relevance to the query parameters.
+    - id: cache_results
+      description: >
+        Cache the result set in Redis for quick pagination and follow-up
+        queries within the same session.
+    - id: present_results
+      description: >
+        Return ranked list with match reasoning. Show top 5 results first.
+        Offer to show more or refine criteria.
+
+output:
+  format: candidate_list
+  fields_per_result:
+    - full_name
+    - current_title
+    - current_organization
+    - city_state
+    - career_stage
+    - knock_rating
+    - match_score (if scored against a search)
+    - match_reasoning (brief, if scored)
+  pagination:
+    default_page_size: 5
+    max_page_size: 20
+
+presentation:
+  summary: >
+    "I found {total_count} candidates matching your criteria.
+    Here are the top {page_size}:"
+  per_candidate: >
+    "{rank}. **{full_name}** -- {current_title} at {current_organization}
+    ({city}, {state}) | Rating: {rating}/5 {score_line}"
+  follow_up: >
+    "Would you like to see more candidates, view a detailed profile,
+    or refine the search criteria?"
+
+error_handling:
+  - condition: No results found
+    action: >
+      Suggest broadening criteria. Indicate which filters were most
+      restrictive. Offer to relax specific parameters.
+  - condition: Too many results (>100)
+    action: >
+      Show count and suggest narrowing criteria. Present top 5 by
+      rating or relevance.

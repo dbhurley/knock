@@ -1,0 +1,200 @@
+skill_name: match_score
+description: >
+  Score a specific candidate against a specific search engagement using
+  the Knock weighted multi-factor scoring system. Returns a 0-100 composite
+  score with detailed reasoning for each factor.
+
+trigger:
+  patterns:
+    - "score this candidate"
+    - "how does .* match"
+    - "rate .* against"
+    - "match score"
+    - "fit for this search"
+  description: >
+    Activate when a user asks to evaluate how well a candidate matches
+    a search, or when presenting candidates for a search.
+
+parameters:
+  - name: person_id
+    type: string
+    required: true
+    description: UUID of the candidate to score
+  - name: search_id
+    type: string
+    required: true
+    description: UUID of the search engagement to score against
+
+tools:
+  - score_candidate
+  - get_person_detail
+  - get_school_detail
+
+scoring_factors:
+  - name: position_experience
+    weight: 0.25
+    description: >
+      Has the candidate held a similar role? Currently in the same role
+      type scores 100. Previously held the role scores 80. Related role
+      scores 60. No relevant experience scores 20.
+    scoring:
+      - score: 100
+        condition: Currently holds same position category
+      - score: 80
+        condition: Previously held same position category
+      - score: 60
+        condition: Primary role matches position category
+      - score: 40
+        condition: Adjacent role (e.g., division head for HOS search)
+      - score: 20
+        condition: No directly relevant position experience
+
+  - name: school_type_match
+    weight: 0.15
+    description: >
+      Does the candidate have experience in the type of school conducting
+      the search? Matching school type (boarding, day, coed, etc.) scores high.
+    scoring:
+      - score: 100
+        condition: Direct experience with matching school type
+      - score: 70
+        condition: Experience with partially matching type
+      - score: 30
+        condition: No matching school type experience
+
+  - name: geographic_fit
+    weight: 0.10
+    description: >
+      Is the candidate geographically aligned? Same state, willing to
+      relocate, or preferred region match.
+    scoring:
+      - score: 100
+        condition: Currently in the same state as the school
+      - score: 80
+        condition: School's state is in candidate's preferred states
+      - score: 70
+        condition: Candidate is willing to relocate
+      - score: 50
+        condition: Candidate is in the same region
+      - score: 30
+        condition: No geographic alignment indicated
+
+  - name: education_level
+    weight: 0.10
+    description: >
+      Does the candidate meet or exceed the education requirements?
+    scoring:
+      - score: 100
+        condition: Exceeds requirements (e.g., doctorate when master's required)
+      - score: 80
+        condition: Meets requirements exactly
+      - score: 40
+        condition: Below requirements but close
+      - score: 10
+        condition: Significantly below requirements
+
+  - name: enrollment_match
+    weight: 0.10
+    description: >
+      Has the candidate managed a school of similar enrollment size?
+    scoring:
+      - score: 100
+        condition: Experience within 20% of target enrollment
+      - score: 75
+        condition: Experience within 50% of target enrollment
+      - score: 50
+        condition: Experience outside 50% but in same general tier
+      - score: 25
+        condition: Significantly different enrollment experience
+
+  - name: specializations
+    weight: 0.10
+    description: >
+      Does the candidate have the specific expertise the search requires?
+    scoring:
+      - score: 100
+        condition: All required specializations present
+      - score: 75
+        condition: Most required specializations present
+      - score: 50
+        condition: Some required specializations present
+      - score: 25
+        condition: Few or no matching specializations
+
+  - name: cultural_fit
+    weight: 0.10
+    description: >
+      Based on candidate profile and search criteria, does the candidate
+      align with the school's culture and values? This is a qualitative
+      assessment based on available data.
+    scoring:
+      - score: 100
+        condition: Strong alignment across multiple cultural dimensions
+      - score: 70
+        condition: Good alignment on key dimensions
+      - score: 50
+        condition: Moderate alignment, some unknowns
+      - score: 30
+        condition: Potential misalignment on key dimensions
+
+  - name: career_stage
+    weight: 0.05
+    description: >
+      Is the candidate at an appropriate career stage for this position?
+    scoring:
+      - score: 100
+        condition: Career stage is ideal for the role
+      - score: 70
+        condition: Career stage is acceptable
+      - score: 40
+        condition: Career stage is a stretch (too junior or too senior)
+
+  - name: availability
+    weight: 0.05
+    description: >
+      Can the candidate realistically start within the search timeline?
+    scoring:
+      - score: 100
+        condition: Available within the desired start window
+      - score: 70
+        condition: Available within 3 months of desired start
+      - score: 40
+        condition: Availability uncertain or delayed
+      - score: 10
+        condition: Not available within a reasonable timeframe
+
+formula: >
+  composite_score = sum(factor_weight * factor_score) / sum(factor_weight)
+  Rounded to nearest integer, 0-100 scale.
+
+output:
+  fields:
+    - composite_score (integer, 0-100)
+    - score_label (Exceptional / Strong / Good / Moderate / Partial)
+    - factor_scores (object with each factor name, score, and brief note)
+    - reasoning (2-3 sentence narrative summary)
+    - strengths (top 3 strengths relative to search)
+    - concerns (any notable gaps or risks)
+    - recommendation (advance / consider / pass)
+
+presentation: |
+  **Match Score: {composite_score}/100** -- {score_label}
+
+  **Strengths**
+  {strengths_list}
+
+  **Considerations**
+  {concerns_list}
+
+  **Factor Breakdown**
+  Position Experience: {position_score}/100 ({weight_pct})
+  School Type: {school_type_score}/100 ({weight_pct})
+  Geographic: {geo_score}/100 ({weight_pct})
+  Education: {edu_score}/100 ({weight_pct})
+  Enrollment: {enrollment_score}/100 ({weight_pct})
+  Specializations: {spec_score}/100 ({weight_pct})
+  Cultural Fit: {culture_score}/100 ({weight_pct})
+  Career Stage: {stage_score}/100 ({weight_pct})
+  Availability: {avail_score}/100 ({weight_pct})
+
+  **Recommendation**: {recommendation}

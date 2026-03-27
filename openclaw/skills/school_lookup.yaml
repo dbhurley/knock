@@ -1,0 +1,146 @@
+skill_name: school_lookup
+description: >
+  Look up school information by name, location, or characteristics.
+  Returns detailed school profiles from the Knock database including
+  enrollment, accreditation, leadership, and financial information.
+
+trigger:
+  patterns:
+    - "look up school"
+    - "tell me about school"
+    - "school info"
+    - "what do we know about"
+    - "school profile"
+    - "/school"
+  description: >
+    Activate when a user asks about a specific school or wants to browse
+    schools by characteristics.
+
+parameters:
+  - name: name
+    type: string
+    required: false
+    description: School name or partial name (fuzzy matched)
+  - name: state
+    type: string
+    required: false
+    description: State abbreviation (e.g., MA, CT, CA)
+  - name: city
+    type: string
+    required: false
+    description: City name
+  - name: school_type
+    type: string
+    required: false
+    description: "Type filter: elementary, middle, high, k8, k12"
+  - name: boarding_status
+    type: string
+    required: false
+    description: "Boarding filter: day, boarding, day_boarding"
+  - name: coed_status
+    type: string
+    required: false
+    description: "Gender filter: coed, boys, girls"
+  - name: min_enrollment
+    type: integer
+    required: false
+    description: Minimum total enrollment
+  - name: max_enrollment
+    type: integer
+    required: false
+    description: Maximum total enrollment
+  - name: nais_member
+    type: boolean
+    required: false
+    description: Filter for NAIS member schools
+  - name: religious_affiliation
+    type: string
+    required: false
+    description: Religious affiliation filter (e.g., Catholic, Jewish, Nonsectarian)
+  - name: tier
+    type: string
+    required: false
+    description: "Knock tier filter: platinum, gold, silver, bronze"
+  - name: free_text
+    type: string
+    required: false
+    description: Full-text search across school data
+
+tools:
+  - query_schools
+  - get_school_detail
+
+output:
+  single_school:
+    fields:
+      - name
+      - location (city, state)
+      - school_type
+      - grade_range
+      - enrollment_total
+      - coed_status
+      - boarding_status
+      - religious_affiliation
+      - nais_member
+      - regional_accreditation
+      - current_head_of_school
+      - tuition_range
+      - endowment_size
+      - student_teacher_ratio
+      - tier
+      - website
+      - last_verified_at
+      - tags
+    extended_on_request:
+      - full_leadership_history
+      - board_members
+      - financial_history
+      - accreditations
+      - programs
+      - active_searches
+
+  school_list:
+    fields_per_result:
+      - name
+      - city_state
+      - enrollment
+      - type_summary (e.g., "K-12 Coed Day, NAIS")
+      - current_head
+      - tier
+    pagination:
+      default_page_size: 10
+
+presentation:
+  single: |
+    **{name}**
+    {city}, {state}
+
+    **Type**: {grade_range} | {coed_status} | {boarding_status}
+    **Enrollment**: {enrollment_total} students
+    **NAIS Member**: {nais_member}
+    **Accreditation**: {regional_accreditation}
+    **Current Head**: {current_head_name} (since {head_start_year})
+    **Tuition**: ${tuition_low} - ${tuition_high}
+    **Endowment**: ${endowment_display}
+    **Student:Teacher**: {ratio}
+    **Knock Tier**: {tier}
+    **Website**: {website}
+
+    Last verified: {last_verified_date}
+
+  list: |
+    Found {count} schools:
+
+    {rank}. **{name}** -- {city}, {state}
+       {type_summary} | {enrollment} students | Tier: {tier}
+
+error_handling:
+  - condition: Multiple matches for name
+    action: >
+      Present all matches and ask the user to clarify which school
+      they mean. Include city/state to disambiguate.
+  - condition: School not in database
+    action: >
+      Inform the user the school is not yet in the database.
+      Offer to create a basic record if they can provide details,
+      or note it for the next NCES sync.

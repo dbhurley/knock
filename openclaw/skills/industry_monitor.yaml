@@ -1,0 +1,153 @@
+skill_name: industry_monitor
+description: >
+  Check and report on recent industry signals and intelligence relevant
+  to the independent school executive market. Surfaces leadership transitions,
+  school news, job postings, and market trends.
+
+trigger:
+  patterns:
+    - "industry signals"
+    - "any news"
+    - "recent transitions"
+    - "what's happening in"
+    - "market intelligence"
+    - "leadership changes"
+    - "/signal"
+  description: >
+    Activate when a user asks about industry news, recent signals,
+    leadership transitions, or market intelligence.
+
+parameters:
+  - name: days_back
+    type: integer
+    required: false
+    default: 30
+    description: Number of days to look back for signals
+  - name: signal_type
+    type: string
+    required: false
+    description: >
+      Filter by signal type: leadership_change, job_posting, school_news,
+      board_change, financial_event, enrollment_change, accreditation,
+      legal_issue, merger_acquisition
+  - name: state
+    type: string
+    required: false
+    description: Filter signals by state
+  - name: school_id
+    type: string
+    required: false
+    description: Filter signals for a specific school
+  - name: unactioned_only
+    type: boolean
+    required: false
+    default: false
+    description: Show only signals that have not been reviewed/actioned
+
+tools:
+  - get_industry_signals
+  - query_schools
+  - get_school_detail
+
+signal_types:
+  - id: leadership_change
+    name: Leadership Transition
+    description: >
+      Head of school or senior executive departure, retirement announcement,
+      or new appointment.
+    urgency: high
+    action: >
+      Check if the school is a potential client. Check if the departing
+      leader is in our database. Update records accordingly.
+
+  - id: job_posting
+    name: Job Posting Detected
+    description: >
+      Executive leadership position posted on job boards, school websites,
+      or professional networks.
+    urgency: medium
+    action: >
+      Cross-reference with active searches. Check if the school is in
+      our database. Flag as a potential outreach opportunity.
+
+  - id: school_news
+    name: School News
+    description: >
+      Significant school news: campus expansion, program launch, controversy,
+      enrollment milestone, major gift.
+    urgency: low
+    action: >
+      Update school profile notes. Flag if relevant to active searches.
+
+  - id: board_change
+    name: Board Change
+    description: >
+      New board chair, significant trustee turnover, or board restructuring.
+    urgency: medium
+    action: >
+      Update board member records. Note that board transitions sometimes
+      precede leadership changes.
+
+  - id: financial_event
+    name: Financial Event
+    description: >
+      Capital campaign launch, major gift, endowment milestone, or
+      financial difficulty report.
+    urgency: low
+    action: Update school financial records.
+
+  - id: enrollment_change
+    name: Enrollment Change
+    description: >
+      Significant enrollment growth, decline, waitlist news, or new
+      program attracting students.
+    urgency: low
+    action: Update school enrollment data.
+
+output:
+  format: signal_list
+  fields_per_signal:
+    - signal_type
+    - date_detected
+    - school_name (if applicable)
+    - person_name (if applicable)
+    - summary (1-2 sentences)
+    - source
+    - relevance_to_active_searches
+    - suggested_action
+    - actioned (boolean)
+
+presentation:
+  header: |
+    **Industry Signals** -- Last {days_back} days
+    {total_count} signals ({unactioned_count} unreviewed)
+    ---
+
+  per_signal: |
+    {icon} **{signal_type_label}** -- {date_short}
+    {school_name}: {summary}
+    Source: {source}
+    {relevance_note}
+    ---
+
+  icons:
+    leadership_change: "!!"
+    job_posting: ">>"
+    school_news: "--"
+    board_change: "**"
+    financial_event: "$$"
+    enrollment_change: "##"
+
+  follow_up: >
+    "Would you like to drill into any of these signals, or mark some
+    as reviewed?"
+
+error_handling:
+  - condition: No signals in time period
+    action: >
+      Report that no new signals were detected. Suggest expanding the
+      time range or checking if data sync jobs are running.
+  - condition: Data sync stale
+    action: >
+      Note when the last signal sync occurred and recommend triggering
+      a refresh if overdue.

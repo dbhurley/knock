@@ -1,0 +1,330 @@
+import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
+import { query, queryOne } from '../lib/db.js';
+import type { PaginatedResponse, Search, SearchCandidate } from '../types/index.js';
+
+// ─── Validation Schemas ────────────────────────────────────────────────────
+
+const listQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  per_page: z.coerce.number().int().min(1).max(100).default(25),
+  status: z.string().optional(),
+  position_category: z.string().optional(),
+  school_id: z.string().uuid().optional(),
+  pricing_band: z.string().optional(),
+});
+
+const createBodySchema = z.object({
+  school_id: z.string().uuid(),
+  position_title: z.string().min(1).max(300),
+  position_category: z.string().max(50).optional(),
+  position_description: z.string().optional(),
+  position_requirements: z.string().optional(),
+  reports_to: z.string().max(200).optional(),
+  salary_range_low: z.number().int().optional(),
+  salary_range_high: z.number().int().optional(),
+  target_start_date: z.string().optional(),
+  search_urgency: z.enum(['immediate', 'standard', 'flexible']).optional(),
+  required_education: z.array(z.string()).optional(),
+  required_experience_years: z.number().int().optional(),
+  preferred_school_types: z.array(z.string()).optional(),
+  ideal_candidate_profile: z.string().optional(),
+  dealbreakers: z.string().optional(),
+  client_contact_name: z.string().max(300).optional(),
+  client_contact_email: z.string().email().max(300).optional(),
+  client_contact_phone: z.string().max(20).optional(),
+  lead_consultant: z.string().max(200).optional(),
+  tags: z.array(z.string()).optional(),
+  notes: z.string().optional(),
+});
+
+const updateBodySchema = createBodySchema.partial().extend({
+  status: z.string().max(30).optional(),
+  pricing_band: z.string().max(20).optional(),
+  fee_amount: z.number().int().optional(),
+  fee_status: z.string().max(30).optional(),
+  deposit_amount: z.number().int().optional(),
+  deposit_paid: z.boolean().optional(),
+});
+
+const candidateCreateSchema = z.object({
+  person_id: z.string().uuid(),
+  status: z.string().max(30).default('identified'),
+  match_score: z.number().min(0).max(100).optional(),
+  match_reasoning: z.string().optional(),
+  source: z.string().max(50).optional(),
+  referred_by: z.string().max(300).optional(),
+  notes: z.string().optional(),
+});
+
+const candidateUpdateSchema = z.object({
+  status: z.string().max(30).optional(),
+  match_score: z.number().min(0).max(100).optional(),
+  interview_feedback: z.string().optional(),
+  client_feedback: z.string().optional(),
+  candidate_feedback: z.string().optional(),
+  rejection_reason: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+const candidateListSchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  per_page: z.coerce.number().int().min(1).max(100).default(25),
+  status: z.string().optional(),
+  min_score: z.coerce.number().min(0).max(100).optional(),
+});
+
+// ─── Routes ────────────────────────────────────────────────────────────────
+
+export default async function searchRoutes(app: FastifyInstance): Promise<void> {
+
+  // GET /api/v1/searches — List searches
+  app.get('/api/v1/searches', async (request, reply) => {
+    const params = listQuerySchema.parse(request.query);
+    const { page, per_page } = params;
+    const offset = (page - 1) * per_page;
+
+    const conditions: string[] = [];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (params.status) {
+      conditions.push(`s.status = $${idx++}`);
+      values.push(params.status);
+    }
+    if (params.position_category) {
+      conditions.push(`s.position_category = $${idx++}`);
+      values.push(params.position_category);
+    }
+    if (params.school_id) {
+      conditions.push(`s.school_id = $${idx++}`);
+      values.push(params.school_id);
+    }
+    if (params.pricing_band) {
+      conditions.push(`s.pricing_band = $${idx++}`);
+      values.push(params.pricing_band);
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const countRow = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM searches s ${where}`,
+      values,
+    );
+    const total = parseInt(countRow?.count ?? '0', 10);
+
+    const rows = await query<Search & { school_name: string }>(
+      `SELECT s.*, sch.name AS school_name
+       FROM searches s
+       LEFT JOIN schools sch ON sch.id = s.school_id
+       ${where}
+       ORDER BY s.created_at DESC
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      [...values, per_page, offset],
+    );
+
+    const result: PaginatedResponse<Search & { school_name: string }> = {
+      data: rows,
+      pagination: { page, per_page, total, total_pages: Math.ceil(total / per_page) },
+    };
+    reply.send(result);
+  });
+
+  // GET /api/v1/searches/:id — Get single search
+  app.get('/api/v1/searches/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const row = await queryOne<Search & { school_name: string }>(
+      `SELECT s.*, sch.name AS school_name
+       FROM searches s
+       LEFT JOIN schools sch ON sch.id = s.school_id
+       WHERE s.id = $1`,
+      [id],
+    );
+    if (!row) return reply.code(404).send({ error: 'Search not found' });
+    reply.send({ data: row });
+  });
+
+  // POST /api/v1/searches — Create search
+  app.post('/api/v1/searches', async (request, reply) => {
+    const body = createBodySchema.parse(request.body);
+
+    // Auto-assign pricing band based on salary_range_high
+    let pricing_band: string | null = null;
+    let fee_amount: number | null = null;
+    let deposit_amount: number | null = null;
+
+    if (body.salary_range_high) {
+      const high = body.salary_range_high;
+      if (high <= 100_000) { pricing_band = 'band_a'; fee_amount = 20_000; }
+      else if (high <= 150_000) { pricing_band = 'band_b'; fee_amount = 30_000; }
+      else if (high <= 200_000) { pricing_band = 'band_c'; fee_amount = 40_000; }
+      else if (high <= 275_000) { pricing_band = 'band_d'; fee_amount = 55_000; }
+      else if (high <= 375_000) { pricing_band = 'band_e'; fee_amount = 75_000; }
+      else if (high <= 500_000) { pricing_band = 'band_f'; fee_amount = 100_000; }
+      else { pricing_band = 'band_g'; fee_amount = 125_000; }
+      deposit_amount = fee_amount / 2;
+    }
+
+    // Generate search number
+    const yearStr = new Date().getFullYear().toString();
+    const seqRow = await queryOne<{ seq: string }>(
+      `SELECT COUNT(*)::text AS seq FROM searches WHERE search_number LIKE $1`,
+      [`KNK-${yearStr}-%`],
+    );
+    const seq = parseInt(seqRow?.seq ?? '0', 10) + 1;
+    const search_number = `KNK-${yearStr}-${String(seq).padStart(3, '0')}`;
+
+    const allFields = {
+      ...body,
+      search_number,
+      pricing_band,
+      fee_amount,
+      deposit_amount,
+    };
+
+    const keys = Object.keys(allFields).filter(
+      (k) => allFields[k as keyof typeof allFields] !== undefined,
+    );
+    const cols = keys.join(', ');
+    const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
+    const vals = keys.map((k) => allFields[k as keyof typeof allFields]);
+
+    const row = await queryOne<Search>(
+      `INSERT INTO searches (${cols}) VALUES (${placeholders}) RETURNING *`,
+      vals,
+    );
+    reply.code(201).send({ data: row });
+  });
+
+  // PATCH /api/v1/searches/:id — Update search
+  app.patch('/api/v1/searches/:id', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = updateBodySchema.parse(request.body);
+    const keys = Object.keys(body).filter(
+      (k) => body[k as keyof typeof body] !== undefined,
+    ) as (keyof typeof body)[];
+    if (keys.length === 0) return reply.code(400).send({ error: 'No fields to update' });
+
+    // If status is changing, also update status_changed_at
+    const extraSets: string[] = [];
+    if (body.status) {
+      extraSets.push(`status_changed_at = NOW()`);
+    }
+
+    const sets = keys.map((k, i) => `${k} = $${i + 2}`);
+    const vals = keys.map((k) => body[k]);
+
+    const allSets = [...sets, ...extraSets, 'updated_at = NOW()'].join(', ');
+
+    const row = await queryOne<Search>(
+      `UPDATE searches SET ${allSets} WHERE id = $1 RETURNING *`,
+      [id, ...vals],
+    );
+    if (!row) return reply.code(404).send({ error: 'Search not found' });
+    reply.send({ data: row });
+  });
+
+  // ─── Search Candidates ─────────────────────────────────────────────────
+
+  // GET /api/v1/searches/:id/candidates — List candidates for search
+  app.get('/api/v1/searches/:id/candidates', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const params = candidateListSchema.parse(request.query);
+    const { page, per_page } = params;
+    const offset = (page - 1) * per_page;
+
+    const conditions: string[] = ['sc.search_id = $1'];
+    const values: unknown[] = [id];
+    let idx = 2;
+
+    if (params.status) {
+      conditions.push(`sc.status = $${idx++}`);
+      values.push(params.status);
+    }
+    if (params.min_score !== undefined) {
+      conditions.push(`sc.match_score >= $${idx++}`);
+      values.push(params.min_score);
+    }
+
+    const where = `WHERE ${conditions.join(' AND ')}`;
+
+    const countRow = await queryOne<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM search_candidates sc ${where}`,
+      values,
+    );
+    const total = parseInt(countRow?.count ?? '0', 10);
+
+    const rows = await query<SearchCandidate & { person_name: string; current_title: string }>(
+      `SELECT sc.*, p.full_name AS person_name, p.current_title
+       FROM search_candidates sc
+       JOIN people p ON p.id = sc.person_id
+       ${where}
+       ORDER BY sc.match_score DESC NULLS LAST, sc.created_at DESC
+       LIMIT $${idx++} OFFSET $${idx++}`,
+      [...values, per_page, offset],
+    );
+
+    const result: PaginatedResponse<SearchCandidate & { person_name: string; current_title: string }> = {
+      data: rows,
+      pagination: { page, per_page, total, total_pages: Math.ceil(total / per_page) },
+    };
+    reply.send(result);
+  });
+
+  // POST /api/v1/searches/:id/candidates — Add candidate to search
+  app.post('/api/v1/searches/:id/candidates', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = candidateCreateSchema.parse(request.body);
+
+    const row = await queryOne<SearchCandidate>(
+      `INSERT INTO search_candidates (search_id, person_id, status, match_score, match_reasoning, source, referred_by, notes)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (search_id, person_id) DO UPDATE SET
+         status = EXCLUDED.status,
+         match_score = COALESCE(EXCLUDED.match_score, search_candidates.match_score),
+         updated_at = NOW()
+       RETURNING *`,
+      [id, body.person_id, body.status, body.match_score ?? null, body.match_reasoning ?? null, body.source ?? null, body.referred_by ?? null, body.notes ?? null],
+    );
+
+    // Update search candidate count
+    await queryOne(
+      `UPDATE searches SET candidates_identified = (
+        SELECT COUNT(*) FROM search_candidates WHERE search_id = $1
+      ) WHERE id = $1`,
+      [id],
+    );
+
+    reply.code(201).send({ data: row });
+  });
+
+  // PATCH /api/v1/searches/:id/candidates/:cid — Update candidate status
+  app.patch('/api/v1/searches/:id/candidates/:cid', async (request, reply) => {
+    const { id, cid } = request.params as { id: string; cid: string };
+    const body = candidateUpdateSchema.parse(request.body);
+    const keys = Object.keys(body).filter(
+      (k) => body[k as keyof typeof body] !== undefined,
+    ) as (keyof typeof body)[];
+    if (keys.length === 0) return reply.code(400).send({ error: 'No fields to update' });
+
+    const sets = keys.map((k, i) => `${k} = $${i + 3}`);
+    const vals = keys.map((k) => body[k]);
+
+    // If status is 'presented', set presented_at
+    const extraSets: string[] = ['updated_at = NOW()'];
+    if (body.status === 'presented') {
+      extraSets.push('presented_at = NOW()');
+    }
+
+    const allSets = [...sets, ...extraSets].join(', ');
+
+    const row = await queryOne<SearchCandidate>(
+      `UPDATE search_candidates SET ${allSets}
+       WHERE search_id = $1 AND id = $2
+       RETURNING *`,
+      [id, cid, ...vals],
+    );
+    if (!row) return reply.code(404).send({ error: 'Search candidate not found' });
+    reply.send({ data: row });
+  });
+}

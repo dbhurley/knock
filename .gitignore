@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnp.*
+.yarn/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build
+dist/
+build/
+.next/
+out/
+
+# Data files (large, downloaded separately)
+services/data-sync/data/nces/*.csv
+services/data-sync/data/nces/*.sas7bdat
+services/data-sync/data/nces/*.sav
+services/data-sync/data/linkedin/*.csv
+
+# Docker volumes
+pgdata/
+redisdata/
+msdata/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# Backups (local)
+backups/
+
+# Secrets
+*.pem
+*.key
+secrets/

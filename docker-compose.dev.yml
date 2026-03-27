@@ -1,0 +1,92 @@
+# Knock - Development Docker Compose Overrides
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml --env-file .env up -d
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dev_password}
+    command: >
+      postgres
+      -c log_statement=all
+      -c log_duration=on
+      -c log_min_duration_statement=100
+      -c shared_preload_libraries=pg_stat_statements
+
+  redis:
+    ports:
+      - "6379:6379"
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly no
+      --loglevel verbose
+
+  meilisearch:
+    ports:
+      - "7700:7700"
+    environment:
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:-dev_master_key}
+      MEILI_ENV: development
+      MEILI_LOG_LEVEL: INFO
+
+  api:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+      target: development
+    ports:
+      - "4000:4000"
+      - "9229:9229"
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-knock_admin}:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/${POSTGRES_DB:-knock}
+    volumes:
+      - ./services/api/src:/app/src:ro
+    command: ["node", "--inspect=0.0.0.0:9229", "--watch", "src/index.js"]
+
+  data-sync:
+    environment:
+      NODE_ENV: development
+      LOG_LEVEL: debug
+      DATABASE_URL: postgres://${POSTGRES_USER:-knock_admin}:${POSTGRES_PASSWORD:-dev_password}@postgres:5432/${POSTGRES_DB:-knock}
+    volumes:
+      - ./services/data-sync/src:/app/src:ro
+
+  caddy:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+
+  # Development-only: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: knock-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@knock.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_LISTEN_PORT: 5050
+    ports:
+      - "5050:5050"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
+  # Development-only: RedisInsight for cache debugging
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: knock-redisinsight
+    ports:
+      - "5540:5540"
+    depends_on:
+      redis:
+        condition: service_healthy
+    profiles:
+      - tools

@@ -1,0 +1,305 @@
+workflow_name: search-lifecycle
+description: >
+  Complete search lifecycle workflow from initial intake through placement
+  and follow-up. Manages the 9-phase search process, status transitions,
+  automated actions, and milestone tracking.
+
+version: "1.0"
+
+phases:
+  - id: intake
+    name: "Phase 1: Intake"
+    status: intake
+    typical_duration: "1-2 days"
+    description: >
+      Initial contact and structured intake interview. School reaches out
+      or Knock identifies an opportunity.
+    steps:
+      - Initial contact received or opportunity identified
+      - Janet conducts intake interview (skill: intake_interview)
+      - School profile reviewed and updated in database
+      - Position requirements documented
+      - Pricing quoted based on salary band
+      - Client accepts fee and terms
+      - Engagement letter sent for signature
+      - Deposit invoiced
+      - Search record created in database
+    skills: [intake_interview, school_lookup, update_record]
+    tools: [query_schools, get_school_detail, create_search]
+    entry_actions:
+      - Create search record with status 'intake'
+      - Log intake interaction
+    exit_actions:
+      - Verify all required intake fields are populated
+      - Confirm engagement letter signed
+      - Confirm deposit received or invoiced
+    exit_condition: >
+      Engagement letter signed, deposit received/invoiced, all intake
+      fields populated.
+    next_status: profiling
+
+  - id: profiling
+    name: "Phase 2: Profiling"
+    status: profiling
+    typical_duration: "3-5 days"
+    description: >
+      Deep dive into school culture, challenges, and opportunities.
+      Refine the ideal candidate profile and develop search strategy.
+    steps:
+      - Deep dive into school culture and challenges
+      - Search committee interviews (if applicable)
+      - Position specification document created
+      - Ideal candidate profile refined with weighted criteria
+      - Search strategy developed
+    skills: [school_lookup, update_record, generate_report]
+    tools: [get_school_detail, query_people]
+    entry_actions:
+      - Schedule profiling meetings/calls
+      - Pull existing school data for review
+    exit_actions:
+      - Position specification finalized
+      - Scoring weights configured for this search
+    exit_condition: >
+      Position specification complete, candidate profile defined,
+      search strategy documented.
+    next_status: sourcing
+
+  - id: sourcing
+    name: "Phase 3: Sourcing"
+    status: sourcing
+    typical_duration: "2-4 weeks"
+    description: >
+      Active candidate identification and initial outreach. Build the
+      candidate pool through database search, outreach, and referrals.
+    steps:
+      - Janet runs database queries against criteria
+      - Candidate pool identified (typically 30-100 initial matches)
+      - LinkedIn outreach to passive candidates
+      - Referral network activated
+      - Industry signal monitoring for relevant transitions
+      - Candidates scored and ranked using match_score
+      - Initial screening conversations conducted
+    skills: [candidate_search, match_score, industry_monitor, update_record]
+    tools: [query_people, score_candidate, get_industry_signals]
+    entry_actions:
+      - Execute initial database search
+      - Set up automated signal monitoring for relevant transitions
+      - Queue initial candidate scoring batch
+    recurring_actions:
+      - Weekly status update to client
+      - Re-score candidate pool as new candidates are added
+      - Monitor industry signals daily
+    exit_actions:
+      - Candidate pool documented with scores
+      - Top candidates flagged for deep screening
+    exit_condition: >
+      Sufficient candidate pool identified (minimum 15-25 viable
+      candidates), initial scores calculated.
+    next_status: screening
+
+  - id: screening
+    name: "Phase 4: Screening"
+    status: screening
+    typical_duration: "2-3 weeks"
+    description: >
+      Deep screening interviews with top candidates. Credential verification,
+      reference checks, and shortlist development.
+    steps:
+      - Deep screening interviews with top 15-25 candidates
+      - Credential verification
+      - Preliminary reference checks
+      - Cultural fit assessment
+      - Candidate interest confirmation
+      - Compensation alignment check
+      - Short list developed (8-12 candidates)
+    skills: [match_score, candidate_search, update_record, generate_report]
+    tools: [get_person_detail, score_candidate, add_interaction]
+    entry_actions:
+      - Schedule screening interviews
+      - Prepare screening question framework
+    recurring_actions:
+      - Log each screening interview as interaction
+      - Update candidate scores after screening
+      - Weekly status update to client
+    exit_actions:
+      - Shortlist finalized (8-12 candidates)
+      - Screening notes documented for each candidate
+    exit_condition: >
+      Shortlist of 8-12 screened candidates ready for presentation.
+    next_status: presenting
+
+  - id: presenting
+    name: "Phase 5: Presenting"
+    status: presenting
+    typical_duration: "1-2 weeks"
+    description: >
+      Candidate presentation to search committee. Materials prepared,
+      presented, and committee selects interview candidates.
+    steps:
+      - Candidate presentation materials prepared (using candidate-profile template)
+      - Presentation delivered to search committee
+      - Committee reviews candidates
+      - Committee selects 4-6 candidates for school interviews
+    skills: [generate_report, match_score]
+    tools: [get_person_detail, score_candidate]
+    entry_actions:
+      - Generate candidate presentation package
+      - Schedule presentation meeting
+    exit_actions:
+      - Record committee selections
+      - Notify selected candidates of advancement
+      - Update candidate statuses in search
+    exit_condition: >
+      Search committee has selected 4-6 candidates for interviews.
+    next_status: interviewing
+
+  - id: interviewing
+    name: "Phase 6: Interviewing"
+    status: interviewing
+    typical_duration: "3-6 weeks"
+    description: >
+      Multi-round interview process including virtual and on-campus visits.
+      Collect feedback from both candidates and school.
+    steps:
+      - First-round interviews (typically virtual)
+      - Interview feedback collected from both sides
+      - Second-round interviews (on-campus visits)
+      - Community events and stakeholder meetings
+      - Finalist identification (2-3 candidates)
+    skills: [update_record, generate_report]
+    tools: [add_interaction, get_person_detail]
+    entry_actions:
+      - Schedule first-round interviews
+      - Prepare interview guides for committee
+    recurring_actions:
+      - Collect and log feedback after each interview
+      - Update candidate pipeline status
+      - Facilitate communication between candidates and school
+    exit_actions:
+      - Finalists identified and confirmed
+      - All interview feedback documented
+    exit_condition: >
+      2-3 finalists identified by the search committee.
+    next_status: finalist
+
+  - id: finalist
+    name: "Phase 7: Finalist"
+    status: finalist
+    typical_duration: "1-3 weeks"
+    description: >
+      Deep reference checks, background verification, final campus visits,
+      and board presentations for finalists.
+    steps:
+      - Deep reference checks (5-8 per finalist)
+      - Background verification
+      - Finalist campus visits (if not already completed)
+      - Board presentations
+      - Final committee deliberation
+      - Selection of preferred candidate
+    skills: [update_record, generate_report]
+    tools: [add_interaction, get_person_detail]
+    entry_actions:
+      - Initiate reference checks for all finalists
+      - Schedule finalist activities
+    exit_actions:
+      - Preferred candidate selected
+      - All reference checks documented
+      - Board approval secured
+    exit_condition: >
+      Preferred candidate selected with board approval.
+    next_status: offer
+
+  - id: offer
+    name: "Phase 8: Offer & Close"
+    status: offer
+    typical_duration: "1-2 weeks"
+    description: >
+      Compensation negotiation, offer extension, acceptance, and
+      transition planning.
+    steps:
+      - Compensation negotiation support
+      - Offer letter preparation guidance
+      - Offer extended to preferred candidate
+      - Candidate acceptance (or return to finalists)
+      - Public announcement planning
+      - Transition planning support
+      - Final invoice sent
+    skills: [update_record, generate_report]
+    tools: [add_interaction, update_search_status]
+    entry_actions:
+      - Prepare compensation negotiation framework
+      - Draft offer guidance for client
+    exit_actions:
+      - Record placement details
+      - Send final invoice
+      - Schedule follow-up check-ins
+      - Update candidate status to 'placed'
+    exit_condition: >
+      Candidate accepts offer and placement is confirmed.
+    next_status: placed
+    alternative_exit:
+      condition: No candidate accepts
+      next_status: closed_no_fill
+
+  - id: follow_up
+    name: "Phase 9: Follow-Up"
+    status: placed
+    typical_duration: "12 months (ongoing)"
+    description: >
+      Post-placement check-ins and relationship maintenance throughout
+      the guarantee period and beyond.
+    steps:
+      - 30-day check-in with placed candidate and school
+      - 90-day check-in
+      - 6-month formal review
+      - 12-month formal review (guarantee period ends)
+      - Ongoing relationship maintenance
+    skills: [update_record]
+    tools: [add_interaction]
+    scheduled_actions:
+      - at: placement_date + 30 days
+        action: 30-day check-in with candidate and school
+      - at: placement_date + 90 days
+        action: 90-day check-in with candidate and school
+      - at: placement_date + 180 days
+        action: 6-month formal review
+      - at: placement_date + 365 days
+        action: 12-month review, guarantee period ends
+    exit_condition: >
+      12-month review completed successfully.
+
+status_transitions:
+  valid:
+    intake: [profiling]
+    profiling: [sourcing]
+    sourcing: [screening]
+    screening: [presenting]
+    presenting: [interviewing]
+    interviewing: [finalist]
+    finalist: [offer]
+    offer: [placed, closed_no_fill]
+  reversible:
+    any: [on_hold]
+  terminal:
+    any: [cancelled]
+  special:
+    closed_no_fill: "Can be re-opened as new search with credit"
+    on_hold: "Can resume to previous status"
+
+notifications:
+  status_change:
+    - Notify Knock team via Telegram when any search changes status
+  overdue:
+    - Alert if a search has been in a phase longer than 1.5x typical duration
+  milestone:
+    - Notify on key milestones (shortlist ready, finalists selected, offer extended)
+  follow_up:
+    - Remind about scheduled check-ins 3 days before due date
+
+metrics:
+  tracked:
+    - time_in_phase (per phase, per search)
+    - total_time_to_fill (intake to placed)
+    - candidates_per_phase (funnel conversion)
+    - client_satisfaction (post-placement survey)
+    - retention_rate (placed candidates still in role at checkpoints)

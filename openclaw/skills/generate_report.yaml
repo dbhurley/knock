@@ -1,0 +1,142 @@
+skill_name: generate_report
+description: >
+  Generate various reports for Knock stakeholders: search status summaries,
+  candidate presentation packages, market analyses, placement histories,
+  and pipeline reports.
+
+trigger:
+  patterns:
+    - "generate report"
+    - "create a report"
+    - "give me a summary"
+    - "status report"
+    - "pipeline report"
+    - "market analysis"
+    - "/report"
+  description: >
+    Activate when a user requests any type of report or summary document.
+
+parameters:
+  - name: report_type
+    type: string
+    required: true
+    description: >
+      Type of report to generate. One of: search_status_report,
+      candidate_presentation, market_analysis, placement_history,
+      pipeline_report, database_stats
+  - name: search_id
+    type: string
+    required: false
+    description: Search engagement ID (required for search_status and candidate_presentation)
+  - name: date_range_start
+    type: string
+    required: false
+    description: Start date for time-bounded reports (ISO format)
+  - name: date_range_end
+    type: string
+    required: false
+    description: End date for time-bounded reports (ISO format)
+  - name: filters
+    type: object
+    required: false
+    description: Additional filters (state, position_type, school_type, etc.)
+
+tools:
+  - query_schools
+  - query_people
+  - get_school_detail
+  - get_person_detail
+  - get_active_searches
+  - score_candidate
+
+report_types:
+  - id: search_status_report
+    name: Search Status Report
+    description: >
+      Current status of a specific search engagement. Includes search
+      details, candidate pipeline breakdown, recent activity, and next steps.
+    required_params: [search_id]
+    sections:
+      - search_overview (school, position, timeline, fee status)
+      - pipeline_summary (candidates by stage with counts)
+      - recent_activity (last 10 interactions/events)
+      - top_candidates (top 5 by match score)
+      - upcoming_milestones
+      - risks_and_blockers
+
+  - id: candidate_presentation
+    name: Candidate Presentation Package
+    description: >
+      Formatted presentation of shortlisted candidates for a search
+      committee. Uses the candidate profile template for each candidate.
+    required_params: [search_id]
+    sections:
+      - search_summary (position, criteria recap)
+      - candidate_profiles (using candidate-profile.md template)
+      - comparative_matrix (side-by-side strengths)
+      - recommendation_summary
+
+  - id: market_analysis
+    name: Market Analysis Report
+    description: >
+      Analysis of the talent market for a specific position type, region,
+      or school segment. Includes supply/demand dynamics, compensation
+      trends, and competitive landscape.
+    sections:
+      - market_overview (total candidates, active vs passive)
+      - geographic_distribution
+      - experience_level_breakdown
+      - compensation_range_analysis
+      - recent_movement (transitions in last 12 months)
+      - competitive_context
+      - recommendations
+
+  - id: placement_history
+    name: Placement History Report
+    description: >
+      Historical report of completed placements. Includes success metrics,
+      average timelines, and retention data.
+    sections:
+      - placement_summary (total placements, time period)
+      - placements_by_position_type
+      - placements_by_region
+      - average_time_to_fill
+      - revenue_summary
+      - retention_metrics (30/90/180/365 day check-ins)
+
+  - id: pipeline_report
+    name: Pipeline Report
+    description: >
+      Overview of all active search engagements and their current status.
+      Executive-level dashboard view.
+    sections:
+      - active_searches_summary (count by status)
+      - searches_by_status (detailed list per status)
+      - revenue_pipeline (projected fees)
+      - upcoming_deadlines
+      - attention_required (stalled or at-risk searches)
+
+  - id: database_stats
+    name: Database Statistics Report
+    description: >
+      Overview of database health, record counts, and data freshness.
+    sections:
+      - record_counts (schools, people, searches, placements)
+      - data_freshness (last sync dates by source)
+      - growth_trends (new records added over time)
+      - data_quality_metrics (completeness percentages)
+
+output:
+  format: telegram_message
+  notes: >
+    Format reports for Telegram readability. Use bold headers, bullet
+    lists, and horizontal separators. For longer reports, break into
+    multiple messages. Offer to export as a document if needed.
+
+error_handling:
+  - condition: Search not found
+    action: List active searches and ask user to select one
+  - condition: Insufficient data for market analysis
+    action: >
+      Note data limitations and provide analysis based on available data.
+      Recommend areas where more data collection would improve accuracy.

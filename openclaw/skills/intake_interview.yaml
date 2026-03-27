@@ -1,0 +1,146 @@
+skill_name: intake_interview
+description: >
+  Conduct a structured intake interview for a new executive search engagement.
+  Guides the client through 7 phases: school identification, position details,
+  compensation and pricing, search criteria, school profile, logistics, and
+  confirmation. Creates a search record upon completion.
+
+trigger:
+  patterns:
+    - "new search"
+    - "start a search"
+    - "find a new"
+    - "need to hire"
+    - "looking for a head"
+    - "leadership transition"
+    - "open position"
+    - "executive search"
+    - "/search"
+  description: >
+    Activate when a user mentions needing to find a new head of school,
+    executive, or starting a new search engagement.
+
+parameters:
+  - name: school_name
+    type: string
+    required: false
+    description: Name of the school if already mentioned
+  - name: position_title
+    type: string
+    required: false
+    description: Position title if already mentioned
+  - name: contact_name
+    type: string
+    required: false
+    description: Name of the person initiating the search
+
+prompt_template: |
+  {{#include ../prompts/intake-template.md}}
+
+phases:
+  - id: school_identification
+    name: School Identification
+    description: Identify and confirm the client school
+    tools:
+      - query_schools
+      - get_school_detail
+    required_fields:
+      - school_name
+      - school_location
+      - school_type
+    on_complete: Confirm school details with client before proceeding
+
+  - id: position_details
+    name: Position Details
+    description: Understand the open position and search context
+    required_fields:
+      - position_title
+      - reporting_structure
+      - new_or_replacement
+      - expected_start_date
+
+  - id: compensation
+    name: Compensation & Pricing
+    description: Establish salary range, determine band, quote fee
+    tools:
+      - get_pricing_quote
+    required_fields:
+      - salary_range_low
+      - salary_range_high
+      - pricing_band
+      - fee_accepted
+    on_complete: >
+      Calculate pricing band from salary range. Quote fee and deposit.
+      Do not proceed until client acknowledges and accepts the fee.
+
+  - id: search_criteria
+    name: Search Criteria
+    description: Define the ideal candidate profile
+    required_fields:
+      - required_qualifications
+      - preferred_background
+      - leadership_style
+      - top_priorities
+    optional_fields:
+      - diversity_considerations
+      - dealbreakers
+      - specializations
+
+  - id: school_profile
+    name: School Profile
+    description: Understand school culture, challenges, and community
+    tools:
+      - get_school_detail
+    skip_condition: School profile is already well-documented in database
+    optional_fields:
+      - mission_values
+      - challenges_opportunities
+      - board_dynamics
+      - financial_health
+      - community_description
+
+  - id: logistics
+    name: Logistics
+    description: Establish engagement practicalities
+    required_fields:
+      - primary_contact_name
+      - primary_contact_email
+      - communication_cadence
+      - timeline_constraints
+    optional_fields:
+      - search_committee_composition
+      - confidentiality_requirements
+
+  - id: confirmation
+    name: Confirmation
+    description: Summarize, confirm, create record, outline next steps
+    tools:
+      - create_search
+      - add_interaction
+    actions:
+      - Summarize all collected information
+      - Ask client to review and correct
+      - Create search record with status 'intake'
+      - Log intake interaction
+      - Outline next steps and timeline
+      - Set reminder for first status update
+
+output:
+  - type: search_record
+    description: New search record created in the database
+  - type: interaction_log
+    description: Intake interview logged as an interaction
+  - type: summary
+    description: Structured summary sent to client for confirmation
+
+error_handling:
+  - condition: School not found in database
+    action: Collect full school details and create record after confirmation
+  - condition: Client declines pricing
+    action: >
+      Thank the client for their time. Note their feedback.
+      Do not create a search record. Offer to discuss further.
+  - condition: Client needs to pause mid-interview
+    action: >
+      Save progress. Summarize what has been collected so far.
+      Offer to resume at their convenience.

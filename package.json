@@ -1,0 +1,24 @@
+{
+  "name": "knock",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Knock - Executive recruiting for private and independent schools",
+  "workspaces": [
+    "services/*"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "eslint": "^9.0.0",
+    "prettier": "^3.4.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
