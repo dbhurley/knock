@@ -1,0 +1,31 @@
+# Knock Enrichment Service - Python Dependencies
+
+# Database
+psycopg2-binary>=2.9.9
+
+# HTTP & Web Scraping
+requests>=2.31.0
+beautifulsoup4>=4.12.3
+lxml>=5.1.0
+
+# RSS/Atom Feed Parsing
+feedparser>=6.0.11
+
+# Fuzzy Matching
+thefuzz>=0.22.1        # formerly fuzzywuzzy
+python-Levenshtein>=0.25.1  # C speedups for thefuzz
+
+# Data Processing
+python-dateutil>=2.9.0
+
+# Rate Limiting
+ratelimit>=2.2.1
+
+# CLI
+click>=8.1.7
+
+# Environment
+python-dotenv>=1.0.1
+
+# CSV/JSON import
+chardet>=5.2.0         # encoding detection for CSV imports
