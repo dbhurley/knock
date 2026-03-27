@@ -248,7 +248,7 @@ def find_matching_school(
 
     # First try exact state match to narrow the search
     candidates = fetch_all(
-        """SELECT id, name, city, state, website, phone, enrollment,
+        """SELECT id, name, city, state, website, phone, enrollment_total,
                   grade_low, grade_high, data_source
            FROM schools
            WHERE LOWER(state) = LOWER(%s)""",
@@ -301,7 +301,8 @@ def find_matching_person(
 
     # Narrow by last name similarity first
     candidates = fetch_all(
-        """SELECT id, first_name, last_name, organization, title, email, phone,
+        """SELECT id, first_name, last_name, current_organization AS organization,
+                  current_title AS title, email_primary AS email, phone_primary AS phone,
                   data_source
            FROM people
            WHERE LOWER(last_name) = LOWER(%s)
@@ -313,7 +314,8 @@ def find_matching_person(
     # If no exact last-name match, try fuzzy on broader set
     if not candidates and last_name:
         candidates = fetch_all(
-            """SELECT id, first_name, last_name, organization, title, email, phone,
+            """SELECT id, first_name, last_name, current_organization AS organization,
+                      current_title AS title, email_primary AS email, phone_primary AS phone,
                       data_source
                FROM people
                WHERE LOWER(last_name) LIKE LOWER(%s)
@@ -357,13 +359,14 @@ def insert_school(data: Dict[str, Any], conn=None) -> Optional[str]:
     data keys: name, city, state, address, zip_code, phone, website, email,
                enrollment, grade_low, grade_high, school_type, affiliation,
                accreditation, data_source, tags (list)
+    Maps scraper field names to actual DB column names.
     """
     row = fetch_one(
         """INSERT INTO schools
-           (name, city, state, address, zip_code, phone, website, email,
-            enrollment, grade_low, grade_high, school_type, affiliation,
-            accreditation, data_source, tags, created_at, updated_at)
-           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
+           (name, city, state, street_address, zip, phone, website, email,
+            enrollment_total, grade_low, grade_high, school_type, religious_affiliation,
+            regional_accreditation, data_source, tags, is_private, created_at, updated_at)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
            RETURNING id""",
         (
             data.get('name', ''),
@@ -382,6 +385,7 @@ def insert_school(data: Dict[str, Any], conn=None) -> Optional[str]:
             data.get('accreditation', ''),
             data.get('data_source', 'association_scrape'),
             data.get('tags', []),
+            data.get('school_type', 'private') == 'private',
         ),
         conn=conn,
     )
@@ -390,13 +394,26 @@ def insert_school(data: Dict[str, Any], conn=None) -> Optional[str]:
 
 def update_school(school_id: str, updates: Dict[str, Any], conn=None) -> None:
     """Update an existing school with non-empty values from updates dict."""
+    # Map scraper field names -> DB column names
+    field_map = {
+        'phone': 'phone',
+        'website': 'website',
+        'email': 'email',
+        'enrollment': 'enrollment_total',
+        'grade_low': 'grade_low',
+        'grade_high': 'grade_high',
+        'affiliation': 'religious_affiliation',
+        'accreditation': 'regional_accreditation',
+        'school_type': 'school_type',
+        'address': 'street_address',
+        'zip_code': 'zip',
+    }
     set_clauses = []
     values = []
-    for field in ['phone', 'website', 'email', 'enrollment', 'grade_low', 'grade_high',
-                   'affiliation', 'accreditation', 'school_type', 'address', 'zip_code']:
-        if updates.get(field):
-            set_clauses.append(f"{field} = %s")
-            values.append(updates[field])
+    for scraper_field, db_col in field_map.items():
+        if updates.get(scraper_field):
+            set_clauses.append(f"{db_col} = %s")
+            values.append(updates[scraper_field])
 
     # Always merge tags if provided
     if updates.get('tags'):
@@ -421,11 +438,12 @@ def insert_person(data: Dict[str, Any], conn=None) -> Optional[str]:
     Insert a new person record. Returns the new person id.
     data keys: first_name, last_name, title, organization, email, phone,
                school_id, data_source, linkedin_url
+    Maps scraper field names to actual DB column names.
     """
     row = fetch_one(
         """INSERT INTO people
-           (first_name, last_name, title, organization, email, phone,
-            school_id, data_source, linkedin_url, created_at, updated_at)
+           (first_name, last_name, current_title, current_organization, email_primary, phone_primary,
+            current_school_id, data_source, linkedin_url, created_at, updated_at)
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), NOW())
            RETURNING id""",
         (
@@ -446,12 +464,20 @@ def insert_person(data: Dict[str, Any], conn=None) -> Optional[str]:
 
 def update_person(person_id: str, updates: Dict[str, Any], conn=None) -> None:
     """Update an existing person with non-empty values from updates dict."""
+    field_map = {
+        'title': 'current_title',
+        'email': 'email_primary',
+        'phone': 'phone_primary',
+        'organization': 'current_organization',
+        'school_id': 'current_school_id',
+        'linkedin_url': 'linkedin_url',
+    }
     set_clauses = []
     values = []
-    for field in ['title', 'email', 'phone', 'organization', 'school_id', 'linkedin_url']:
-        if updates.get(field):
-            set_clauses.append(f"{field} = %s")
-            values.append(updates[field])
+    for scraper_field, db_col in field_map.items():
+        if updates.get(scraper_field):
+            set_clauses.append(f"{db_col} = %s")
+            values.append(updates[scraper_field])
 
     if not set_clauses:
         return
