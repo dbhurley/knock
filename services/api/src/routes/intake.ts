@@ -134,26 +134,26 @@ export default async function intakeRoutes(app: FastifyInstance): Promise<void> 
     const chatId = process.env.TELEGRAM_CHAT_ID || '-1003814956035';
     if (telegramToken) {
       const msg = [
-        `🔔 *New Search Inquiry*`,
+        `🔔 <b>New Search Inquiry</b>`,
         ``,
-        `*School:* ${b.school_name} (${b.city}, ${b.state})`,
-        `*Position:* ${positionTitle}`,
-        `*Salary Band:* ${b.salary_band} (Fee: $${(band?.fee || 0).toLocaleString()})`,
-        `*Contact:* ${b.contact_name}${b.contact_title ? ` — ${b.contact_title}` : ''}`,
-        `*Email:* ${b.contact_email}`,
-        b.contact_phone ? `*Phone:* ${b.contact_phone}` : '',
-        b.search_urgency ? `*Urgency:* ${b.search_urgency}` : '',
-        b.target_start_date ? `*Target Start:* ${b.target_start_date}` : '',
+        `<b>School:</b> ${b.school_name} (${b.city}, ${b.state})`,
+        `<b>Position:</b> ${positionTitle}`,
+        `<b>Salary Band:</b> ${b.salary_band} (Fee: $${(band?.fee || 0).toLocaleString()})`,
+        `<b>Contact:</b> ${b.contact_name}${b.contact_title ? ` — ${b.contact_title}` : ''}`,
+        `<b>Email:</b> ${b.contact_email}`,
+        b.contact_phone ? `<b>Phone:</b> ${b.contact_phone}` : '',
+        b.search_urgency ? `<b>Urgency:</b> ${b.search_urgency}` : '',
+        b.target_start_date ? `<b>Target Start:</b> ${b.target_start_date}` : '',
         ``,
-        `*Search #:* \`${searchNumber}\``,
-        b.description ? `\n*Description:*\n${b.description.substring(0, 500)}` : '',
+        `<b>Search #:</b> <code>${searchNumber}</code>`,
+        b.description ? `\n<b>Description:</b>\n${b.description.substring(0, 500)}` : '',
       ].filter(Boolean).join('\n');
 
       try {
         await globalThis.fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown' }),
+          body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'HTML' }),
         });
       } catch (e) {
         request.log.error(`Telegram notification failed: ${String(e)}`);
