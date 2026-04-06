@@ -13,6 +13,8 @@ const listQuerySchema = z.object({
   primary_role: z.string().optional(),
   career_stage: z.string().optional(),
   knock_rating_min: z.coerce.number().int().min(1).max(5).optional(),
+  knock_rating: z.string().optional(),           // 'null' to filter unrated
+  sort: z.string().optional(),                   // 'alpha', 'completeness', 'random'
   q: z.string().optional(),
 });
 
@@ -40,6 +42,8 @@ const createBodySchema = z.object({
   knock_rating: z.number().int().min(1).max(5).optional(),
   cultural_fit_tags: z.array(z.string()).optional(),
   leadership_style: z.array(z.string()).optional(),
+  ideal_next_role: z.string().max(50).optional(),
+  transition_readiness: z.string().max(30).optional(),
   candidate_status: z.enum(['active', 'passive', 'not_looking', 'placed', 'do_not_contact', 'retired']).optional(),
   availability_date: z.string().optional(),
   relationship_strength: z.enum(['strong', 'moderate', 'weak', 'new']).optional(),
@@ -84,12 +88,23 @@ export default async function peopleRoutes(app: FastifyInstance): Promise<void> 
       conditions.push(`knock_rating >= $${idx++}`);
       values.push(params.knock_rating_min);
     }
+    if (params.knock_rating === 'null') {
+      conditions.push(`knock_rating IS NULL`);
+    }
     if (params.q) {
       conditions.push(`search_vector @@ plainto_tsquery('english', $${idx++})`);
       values.push(params.q);
     }
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    // Sort options
+    let orderBy = 'ORDER BY last_name ASC, first_name ASC';
+    if (params.sort === 'completeness') {
+      orderBy = 'ORDER BY data_completeness_score DESC NULLS LAST, last_name ASC';
+    } else if (params.sort === 'random') {
+      orderBy = 'ORDER BY RANDOM()';
+    }
 
     const countRow = await queryOne<{ count: string }>(
       `SELECT COUNT(*) AS count FROM people ${where}`,
@@ -98,7 +113,7 @@ export default async function peopleRoutes(app: FastifyInstance): Promise<void> 
     const total = parseInt(countRow?.count ?? '0', 10);
 
     const rows = await query<Person>(
-      `SELECT * FROM people ${where} ORDER BY last_name ASC, first_name ASC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT * FROM people ${where} ${orderBy} LIMIT $${idx++} OFFSET $${idx++}`,
       [...values, per_page, offset],
     );
 

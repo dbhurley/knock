@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Candidate Assessment | Knock</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafaf8; color: #1a1a1a; }
+
+        /* ── Header ─────────────────────────────── */
+        header { display: flex; align-items: center; justify-content: space-between; padding: 0.8rem 1.5rem; border-bottom: 1px solid #eee; background: #fff; position: sticky; top: 0; z-index: 10; }
+        header .brand { font-weight: 700; font-size: 1.1rem; color: #b8860b; letter-spacing: 0.05em; text-decoration: none; }
+        .progress { font-size: 0.8rem; color: #888; }
+        .progress strong { color: #1a1a1a; }
+
+        /* ── Filters ────────────────────────────── */
+        .filters { display: flex; gap: 0.6rem; padding: 0.7rem 1.5rem; background: #fff; border-bottom: 1px solid #eee; flex-wrap: wrap; align-items: center; }
+        .filters label { font-size: 0.75rem; color: #888; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+        .filters select { padding: 0.3rem 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 0.82rem; background: #fff; font-family: inherit; }
+        .filters .spacer { flex: 1; }
+        .keyboard-hint { font-size: 0.7rem; color: #bbb; }
+        .keyboard-hint kbd { display: inline-block; padding: 0.1rem 0.35rem; border: 1px solid #ddd; border-radius: 3px; background: #f5f5f5; font-family: inherit; font-size: 0.68rem; }
+
+        /* ── Main Layout ────────────────────────── */
+        main { max-width: 720px; margin: 0 auto; padding: 1.5rem 1.5rem 6rem; }
+
+        /* ── Candidate Card ─────────────────────── */
+        .candidate-card { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem; }
+        .candidate-card h2 { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.15rem; }
+        .candidate-card h2 .suffix { font-weight: 400; color: #888; font-size: 0.9rem; }
+        .candidate-meta { color: #666; font-size: 0.9rem; line-height: 1.6; }
+        .candidate-meta a { color: #b8860b; text-decoration: none; }
+        .candidate-meta a:hover { text-decoration: underline; }
+        .tag-row { display: flex; gap: 0.4rem; flex-wrap: wrap; margin-top: 0.6rem; }
+        .tag { display: inline-block; padding: 0.15rem 0.5rem; background: #f5f0e8; color: #8b6914; border-radius: 3px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em; }
+        .tag.dim { background: #f0f0f0; color: #999; }
+        .completeness-bar { margin-top: 0.8rem; }
+        .completeness-bar .label { font-size: 0.72rem; color: #888; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; margin-bottom: 0.25rem; }
+        .bar-track { height: 4px; background: #eee; border-radius: 2px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+
+        /* ── Section Headers ────────────────────── */
+        .section-title { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.12em; color: #b8860b; font-weight: 700; margin: 1.5rem 0 0.8rem; padding-bottom: 0.3rem; border-bottom: 2px solid #f0e6d0; }
+
+        /* ── Star Rating ────────────────────────── */
+        .star-rating { display: flex; gap: 0.3rem; align-items: center; margin-bottom: 0.5rem; }
+        .star { width: 36px; height: 36px; cursor: pointer; border: 2px solid #ddd; border-radius: 6px; background: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: all 0.15s; color: #ccc; user-select: none; }
+        .star:hover { border-color: #b8860b; }
+        .star.active { background: #b8860b; border-color: #b8860b; color: #fff; }
+        .star-label { margin-left: 0.7rem; font-size: 0.82rem; color: #888; min-width: 200px; }
+        @media (max-width: 600px) { .star-label { display: none; } }
+
+        /* ── Checkbox / Tag Groups ──────────────── */
+        .tag-group { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.5rem; }
+        .tag-group .tag-btn { padding: 0.35rem 0.7rem; border: 1.5px solid #ddd; border-radius: 5px; background: #fff; font-size: 0.8rem; cursor: pointer; transition: all 0.15s; font-family: inherit; color: #555; }
+        .tag-btn:hover { border-color: #b8860b; }
+        .tag-btn.selected { background: #b8860b; border-color: #b8860b; color: #fff; }
+        .tag-sublabel { font-size: 0.72rem; color: #aaa; margin-bottom: 0.4rem; }
+
+        /* ── Form Fields ────────────────────────── */
+        .field { margin-bottom: 1rem; }
+        .field label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.3rem; color: #333; }
+        .field select, .field textarea { width: 100%; padding: 0.6rem 0.8rem; border: 1.5px solid #ddd; border-radius: 6px; font-size: 0.88rem; font-family: inherit; background: #fff; }
+        .field select:focus, .field textarea:focus { outline: none; border-color: #b8860b; }
+        .field textarea { resize: vertical; min-height: 70px; }
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+        @media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
+
+        /* ── Action Buttons ─────────────────────── */
+        .actions { display: flex; gap: 0.8rem; margin-top: 1.5rem; }
+        .btn { padding: 0.75rem 1.5rem; border: none; border-radius: 6px; font-size: 0.92rem; font-weight: 700; cursor: pointer; font-family: inherit; transition: background 0.2s; }
+        .btn-primary { background: #b8860b; color: #fff; flex: 1; }
+        .btn-primary:hover { background: #9a7209; }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
+        .btn-skip { background: #f0f0f0; color: #666; }
+        .btn-skip:hover { background: #e5e5e5; }
+
+        /* ── Toast ──────────────────────────────── */
+        .toast { position: fixed; bottom: 1.5rem; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 0.6rem 1.2rem; border-radius: 6px; font-size: 0.85rem; opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 100; }
+        .toast.show { opacity: 1; }
+
+        /* ── Loading / Empty States ──────────────── */
+        .loading { text-align: center; padding: 4rem 1rem; color: #888; }
+        .loading .spinner { width: 28px; height: 28px; border: 3px solid #eee; border-top-color: #b8860b; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .empty-state { text-align: center; padding: 4rem 1rem; color: #888; }
+        .empty-state h3 { font-size: 1.2rem; color: #1a1a1a; margin-bottom: 0.5rem; }
+    </style>
+</head>
+<body>
+
+<header>
+    <a href="/" class="brand">KNOCK</a>
+    <div class="progress" id="progressText">Loading...</div>
+</header>
+
+<div class="filters">
+    <label>Filter</label>
+    <select id="filterSelect">
+        <option value="unrated_hos">Unrated HOS only</option>
+        <option value="unrated_all">Unrated (all roles)</option>
+        <option value="hos">All HOS</option>
+        <option value="all">Everyone</option>
+    </select>
+    <label>Sort</label>
+    <select id="sortSelect">
+        <option value="alpha">A &rarr; Z</option>
+        <option value="completeness">Data completeness</option>
+        <option value="random">Random</option>
+    </select>
+    <div class="spacer"></div>
+    <div class="keyboard-hint">
+        <kbd>1</kbd>-<kbd>5</kbd> rate &nbsp; <kbd>Enter</kbd> save &nbsp; <kbd>&rarr;</kbd> skip
+    </div>
+</div>
+
+<main>
+    <div id="loadingState" class="loading">
+        <div class="spinner"></div>
+        <div>Loading candidates...</div>
+    </div>
+
+    <div id="emptyState" class="empty-state" style="display:none;">
+        <h3>All done!</h3>
+        <p>No more candidates matching this filter. Switch filters to continue.</p>
+    </div>
+
+    <div id="assessmentUI" style="display:none;">
+
+        <!-- Candidate Info -->
+        <div class="candidate-card" id="candidateCard">
+            <h2 id="candidateName"></h2>
+            <div class="candidate-meta" id="candidateMeta"></div>
+            <div class="tag-row" id="candidateTags"></div>
+            <div class="completeness-bar" id="completenessBar">
+                <div class="label">Data completeness</div>
+                <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+            </div>
+        </div>
+
+        <!-- Knock Rating -->
+        <div class="section-title">Knock Rating</div>
+        <div class="star-rating" id="starRating">
+            <div class="star" data-val="1">1</div>
+            <div class="star" data-val="2">2</div>
+            <div class="star" data-val="3">3</div>
+            <div class="star" data-val="4">4</div>
+            <div class="star" data-val="5">5</div>
+            <div class="star-label" id="starLabel">Click or press 1-5</div>
+        </div>
+
+        <!-- Cultural Fit Tags -->
+        <div class="section-title">Cultural Fit</div>
+        <div class="tag-sublabel">School environment alignment</div>
+        <div class="tag-group" id="culturalFitTags" data-field="cultural_fit_tags">
+            <button class="tag-btn" data-val="progressive">progressive</button>
+            <button class="tag-btn" data-val="traditional">traditional</button>
+            <button class="tag-btn" data-val="classical">classical</button>
+            <button class="tag-btn" data-val="faith-based">faith-based</button>
+            <button class="tag-btn" data-val="secular">secular</button>
+            <button class="tag-btn" data-val="innovative">innovative</button>
+            <button class="tag-btn" data-val="collaborative">collaborative</button>
+            <button class="tag-btn" data-val="operational">operational</button>
+            <button class="tag-btn" data-val="visionary">visionary</button>
+            <button class="tag-btn" data-val="boarding-experienced">boarding-experienced</button>
+            <button class="tag-btn" data-val="international">international</button>
+            <button class="tag-btn" data-val="diverse-community">diverse-community</button>
+            <button class="tag-btn" data-val="fundraising-strong">fundraising-strong</button>
+            <button class="tag-btn" data-val="enrollment-growth">enrollment-growth</button>
+            <button class="tag-btn" data-val="accreditation-expert">accreditation-expert</button>
+        </div>
+
+        <!-- Leadership Style -->
+        <div class="section-title">Leadership Style</div>
+        <div class="tag-group" id="leadershipStyleTags" data-field="leadership_style">
+            <button class="tag-btn" data-val="collaborative">collaborative</button>
+            <button class="tag-btn" data-val="visionary">visionary</button>
+            <button class="tag-btn" data-val="transformational">transformational</button>
+            <button class="tag-btn" data-val="operational">operational</button>
+            <button class="tag-btn" data-val="servant">servant</button>
+            <button class="tag-btn" data-val="entrepreneurial">entrepreneurial</button>
+            <button class="tag-btn" data-val="data-driven">data-driven</button>
+        </div>
+
+        <!-- Specializations -->
+        <div class="section-title">Specializations</div>
+        <div class="tag-group" id="specializationTags" data-field="specializations">
+            <button class="tag-btn" data-val="fundraising">fundraising</button>
+            <button class="tag-btn" data-val="enrollment_management">enrollment mgmt</button>
+            <button class="tag-btn" data-val="dei">DEI</button>
+            <button class="tag-btn" data-val="stem">STEM</button>
+            <button class="tag-btn" data-val="arts">arts</button>
+            <button class="tag-btn" data-val="boarding">boarding</button>
+            <button class="tag-btn" data-val="financial_management">financial mgmt</button>
+            <button class="tag-btn" data-val="strategic_planning">strategic planning</button>
+            <button class="tag-btn" data-val="curriculum_development">curriculum dev</button>
+            <button class="tag-btn" data-val="early_childhood">early childhood</button>
+            <button class="tag-btn" data-val="special_education">special ed</button>
+            <button class="tag-btn" data-val="educational_technology">ed tech</button>
+        </div>
+
+        <!-- Dropdowns Row -->
+        <div class="section-title">Placement Fit</div>
+        <div class="row">
+            <div class="field">
+                <label>Ideal Next Role</label>
+                <select id="idealNextRole">
+                    <option value="">-- select --</option>
+                    <option value="larger_hos">Larger HOS role</option>
+                    <option value="similar_hos">Similar HOS role</option>
+                    <option value="division_head">Division head</option>
+                    <option value="consultant">Consultant</option>
+                    <option value="retired">Retired / winding down</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="field">
+                <label>Transition Readiness</label>
+                <select id="transitionReadiness">
+                    <option value="">-- select --</option>
+                    <option value="ready_now">Ready now</option>
+                    <option value="ready_1yr">Ready in ~1 year</option>
+                    <option value="ready_2yr">Ready in ~2 years</option>
+                    <option value="not_ready">Not ready / not moving</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="field">
+            <label>Quick Notes</label>
+            <textarea id="quickNotes" placeholder="Anything notable about this candidate..."></textarea>
+        </div>
+
+        <!-- Actions -->
+        <div class="actions">
+            <button class="btn btn-skip" id="btnSkip" type="button">Skip &rarr;</button>
+            <button class="btn btn-primary" id="btnSave" type="button">Save &amp; Next</button>
+        </div>
+    </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+    'use strict';
+
+    const API = 'https://api.askknock.com';
+
+    // ── State ──────────────────────────────────────────
+    let currentPerson = null;
+    let currentOffset = 0;
+    let totalRemaining = 0;
+    let totalMatching = 0;
+    let saving = false;
+
+    // ── DOM Refs ───────────────────────────────────────
+    const $loading     = document.getElementById('loadingState');
+    const $empty       = document.getElementById('emptyState');
+    const $ui          = document.getElementById('assessmentUI');
+    const $progress    = document.getElementById('progressText');
+    const $name        = document.getElementById('candidateName');
+    const $meta        = document.getElementById('candidateMeta');
+    const $tags        = document.getElementById('candidateTags');
+    const $barFill     = document.getElementById('barFill');
+    const $starLabel   = document.getElementById('starLabel');
+    const $idealRole   = document.getElementById('idealNextRole');
+    const $transition  = document.getElementById('transitionReadiness');
+    const $notes       = document.getElementById('quickNotes');
+    const $btnSave     = document.getElementById('btnSave');
+    const $btnSkip     = document.getElementById('btnSkip');
+    const $filter      = document.getElementById('filterSelect');
+    const $sort        = document.getElementById('sortSelect');
+    const $toast       = document.getElementById('toast');
+
+    const starLabels = {
+        1: 'Not a fit for our network',
+        2: 'Marginal / keep on file',
+        3: 'Solid candidate, standard qualifications',
+        4: 'Strong candidate, impressive background',
+        5: 'Top tier, place immediately'
+    };
+
+    let selectedRating = 0;
+
+    // ── Star Rating ────────────────────────────────────
+    const stars = document.querySelectorAll('#starRating .star');
+    stars.forEach(s => {
+        s.addEventListener('click', () => setRating(parseInt(s.dataset.val)));
+    });
+
+    function setRating(n) {
+        selectedRating = n;
+        stars.forEach(s => {
+            s.classList.toggle('active', parseInt(s.dataset.val) <= n);
+        });
+        $starLabel.textContent = starLabels[n] || '';
+    }
+
+    // ── Tag Buttons ────────────────────────────────────
+    document.querySelectorAll('.tag-group').forEach(group => {
+        group.querySelectorAll('.tag-btn').forEach(btn => {
+            btn.addEventListener('click', () => btn.classList.toggle('selected'));
+        });
+    });
+
+    function getSelectedTags(groupId) {
+        return Array.from(document.getElementById(groupId).querySelectorAll('.tag-btn.selected'))
+            .map(b => b.dataset.val);
+    }
+
+    function clearForm() {
+        selectedRating = 0;
+        stars.forEach(s => s.classList.remove('active'));
+        $starLabel.textContent = 'Click or press 1-5';
+        document.querySelectorAll('.tag-btn').forEach(b => b.classList.remove('selected'));
+        $idealRole.value = '';
+        $transition.value = '';
+        $notes.value = '';
+    }
+
+    function prePopulateFromPerson(person) {
+        // Pre-fill existing data if re-rating
+        if (person.knock_rating) setRating(person.knock_rating);
+        if (person.cultural_fit_tags && person.cultural_fit_tags.length) {
+            person.cultural_fit_tags.forEach(t => {
+                const btn = document.querySelector('#culturalFitTags .tag-btn[data-val="' + t + '"]');
+                if (btn) btn.classList.add('selected');
+            });
+        }
+        if (person.leadership_style && person.leadership_style.length) {
+            person.leadership_style.forEach(t => {
+                const btn = document.querySelector('#leadershipStyleTags .tag-btn[data-val="' + t + '"]');
+                if (btn) btn.classList.add('selected');
+            });
+        }
+        if (person.specializations && person.specializations.length) {
+            person.specializations.forEach(t => {
+                const btn = document.querySelector('#specializationTags .tag-btn[data-val="' + t + '"]');
+                if (btn) btn.classList.add('selected');
+            });
+        }
+        if (person.ideal_next_role) $idealRole.value = person.ideal_next_role;
+        if (person.transition_readiness) $transition.value = person.transition_readiness;
+        if (person.notes) $notes.value = person.notes;
+    }
+
+    // ── Build Query Params ─────────────────────────────
+    function buildQuery() {
+        const filter = $filter.value;
+        const sort = $sort.value;
+        const params = new URLSearchParams();
+        params.set('per_page', '1');
+        params.set('page', String(currentOffset + 1));
+
+        if (filter === 'unrated_hos') {
+            params.set('knock_rating', 'null');
+            params.set('primary_role', 'head_of_school');
+        } else if (filter === 'unrated_all') {
+            params.set('knock_rating', 'null');
+        } else if (filter === 'hos') {
+            params.set('primary_role', 'head_of_school');
+        }
+        // 'all' = no filter
+
+        if (sort === 'completeness') params.set('sort', 'completeness');
+        else if (sort === 'random') params.set('sort', 'random');
+        // default alpha = server default
+
+        return params.toString();
+    }
+
+    // ── Fetch Next Candidate ───────────────────────────
+    async function fetchCandidate() {
+        $loading.style.display = '';
+        $empty.style.display = 'none';
+        $ui.style.display = 'none';
+
+        try {
+            const qs = buildQuery();
+            const resp = await fetch(API + '/api/v1/people?' + qs);
+            if (!resp.ok) throw new Error('API error: ' + resp.status);
+            const json = await resp.json();
+
+            totalMatching = json.pagination.total;
+            totalRemaining = totalMatching - currentOffset;
+
+            if (!json.data || json.data.length === 0) {
+                $loading.style.display = 'none';
+                $empty.style.display = '';
+                $progress.innerHTML = '<strong>0</strong> remaining';
+                return;
+            }
+
+            currentPerson = json.data[0];
+            clearForm();
+            prePopulateFromPerson(currentPerson);
+            renderCandidate(currentPerson);
+
+            $loading.style.display = 'none';
+            $ui.style.display = '';
+            $progress.innerHTML = '<strong>' + totalRemaining + '</strong> remaining of ' + totalMatching;
+
+        } catch (err) {
+            $loading.style.display = 'none';
+            $empty.style.display = '';
+            $empty.querySelector('h3').textContent = 'Error';
+            $empty.querySelector('p').textContent = err.message;
+        }
+    }
+
+    // ── Render Candidate ───────────────────────────────
+    function renderCandidate(p) {
+        // Name
+        let nameHtml = esc(p.full_name);
+        if (p.suffix) nameHtml += ' <span class="suffix">' + esc(p.suffix) + '</span>';
+        $name.innerHTML = nameHtml;
+
+        // Meta lines
+        let metaLines = [];
+        if (p.current_title && p.current_organization) {
+            metaLines.push(esc(p.current_title) + ' at ' + esc(p.current_organization));
+        } else if (p.current_title) {
+            metaLines.push(esc(p.current_title));
+        } else if (p.current_organization) {
+            metaLines.push(esc(p.current_organization));
+        }
+
+        let locParts = [];
+        if (p.city) locParts.push(p.city);
+        if (p.state) locParts.push(p.state);
+        if (locParts.length) metaLines.push(esc(locParts.join(', ')));
+
+        if (p.career_stage) metaLines.push('Career stage: ' + esc(p.career_stage.replace(/_/g, ' ')));
+        if (p.primary_role) metaLines.push('Role: ' + esc(p.primary_role.replace(/_/g, ' ')));
+
+        if (p.linkedin_url) {
+            metaLines.push('<a href="' + esc(p.linkedin_url) + '" target="_blank" rel="noopener">LinkedIn profile &rarr;</a>');
+        }
+
+        $meta.innerHTML = metaLines.join('<br>');
+
+        // Existing tags
+        let tagHtml = '';
+        if (p.specializations && p.specializations.length) {
+            p.specializations.forEach(t => { tagHtml += '<span class="tag">' + esc(t) + '</span>'; });
+        }
+        if (p.tags && p.tags.length) {
+            p.tags.forEach(t => { tagHtml += '<span class="tag dim">' + esc(t) + '</span>'; });
+        }
+        $tags.innerHTML = tagHtml;
+
+        // Completeness
+        const score = p.data_completeness_score || 0;
+        $barFill.style.width = score + '%';
+        let barColor = '#e74c3c';
+        if (score >= 70) barColor = '#27ae60';
+        else if (score >= 40) barColor = '#f39c12';
+        $barFill.style.background = barColor;
+        document.querySelector('.completeness-bar .label').textContent = 'Data completeness: ' + score + '%';
+    }
+
+    // ── Save Assessment ────────────────────────────────
+    async function saveAssessment() {
+        if (!currentPerson || saving) return;
+        if (selectedRating === 0) {
+            showToast('Please select a rating (1-5)');
+            return;
+        }
+
+        saving = true;
+        $btnSave.disabled = true;
+        $btnSave.textContent = 'Saving...';
+
+        const payload = {
+            knock_rating: selectedRating,
+            cultural_fit_tags: getSelectedTags('culturalFitTags'),
+            leadership_style: getSelectedTags('leadershipStyleTags'),
+            specializations: getSelectedTags('specializationTags'),
+        };
+
+        if ($idealRole.value) payload.ideal_next_role = $idealRole.value;
+        if ($transition.value) payload.transition_readiness = $transition.value;
+        if ($notes.value.trim()) payload.notes = $notes.value.trim();
+
+        try {
+            const resp = await fetch(API + '/api/v1/people/' + currentPerson.id, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || 'Save failed: ' + resp.status);
+            }
+
+            showToast('Saved: ' + currentPerson.full_name + ' = ' + selectedRating + ' stars');
+
+            // For unrated filters, don't advance offset since the list shifted.
+            // For rated filters, advance to next page.
+            const filter = $filter.value;
+            if (!filter.startsWith('unrated')) {
+                currentOffset++;
+            }
+
+            fetchCandidate();
+        } catch (err) {
+            showToast('Error: ' + err.message);
+        } finally {
+            saving = false;
+            $btnSave.disabled = false;
+            $btnSave.textContent = 'Save & Next';
+        }
+    }
+
+    // ── Skip ───────────────────────────────────────────
+    function skipCandidate() {
+        currentOffset++;
+        fetchCandidate();
+    }
+
+    // ── Toast ──────────────────────────────────────────
+    let toastTimer = null;
+    function showToast(msg) {
+        $toast.textContent = msg;
+        $toast.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => $toast.classList.remove('show'), 2500);
+    }
+
+    // ── Escape HTML ────────────────────────────────────
+    function esc(s) {
+        if (!s) return '';
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    // ── Event Listeners ────────────────────────────────
+    $btnSave.addEventListener('click', saveAssessment);
+    $btnSkip.addEventListener('click', skipCandidate);
+
+    $filter.addEventListener('change', () => { currentOffset = 0; fetchCandidate(); });
+    $sort.addEventListener('change', () => { currentOffset = 0; fetchCandidate(); });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+        // Don't capture when typing in textarea
+        if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+
+        if (e.key >= '1' && e.key <= '5') {
+            e.preventDefault();
+            setRating(parseInt(e.key));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            saveAssessment();
+        } else if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            skipCandidate();
+        }
+    });
+
+    // ── Init ───────────────────────────────────────────
+    fetchCandidate();
+
+})();
+</script>
+</body>
+</html>

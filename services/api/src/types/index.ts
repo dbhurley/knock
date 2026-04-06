@@ -114,6 +114,8 @@ export interface Person {
   knock_rating: number | null;
   cultural_fit_tags: string[];
   leadership_style: string[];
+  ideal_next_role: string | null;
+  transition_readiness: string | null;
 
   // Status
   candidate_status: string | null;
