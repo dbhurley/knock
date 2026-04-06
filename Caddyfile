@@ -12,13 +12,24 @@ askknock.com {
 	root * /srv/public
 
 	# Protect assessment tool with basic auth (Dan only)
-	@assess path /assess.html
+	@assess path /assess /assess.html
 	basic_auth @assess {
-		# Password hash generated via: caddy hash-password --plaintext <password>
 		dan $2a$14$XsY4m.h2zd8LIGtn2boLJO35cuqjNxxxy0JuFIHR.P26rd8v6iQeO
 	}
 
-	file_server
+	route {
+		# Clean URLs: rewrite /foo to /foo.html before file_server
+		@needsHtml {
+			not path *.html *.css *.js *.svg *.png *.jpg *.gif *.ico *.woff *.woff2 *.xml *.txt
+			not path /
+			not path /files/*
+		}
+		rewrite @needsHtml {path}.html
+
+		file_server {
+			precompressed gzip br
+		}
+	}
 
 	encode gzip zstd
 
@@ -45,8 +56,10 @@ askknock.com {
 
 # OpenClaw Gateway dashboard (token-protected)
 janet.askknock.com {
-	reverse_proxy knock-openclaw:3000 {
+	reverse_proxy localhost:3000 {
 		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
 		transport http {
 			keepalive 30s
 			keepalive_idle_conns 10
@@ -72,12 +85,29 @@ janet.askknock.com {
 
 # REST API
 api.askknock.com {
-	reverse_proxy knock-api:4000 {
+	@cors_preflight method OPTIONS
+
+	handle @cors_preflight {
+		header Access-Control-Allow-Origin "https://askknock.com"
+		header Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+		header Access-Control-Allow-Headers "Content-Type, X-API-Key, Authorization"
+		header Access-Control-Max-Age "86400"
+		respond "" 204
+	}
+
+	header Access-Control-Allow-Origin "https://askknock.com"
+	header Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
+	header Access-Control-Allow-Headers "Content-Type, X-API-Key, Authorization"
+
+	reverse_proxy localhost:4000 {
 		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
 		transport http {
 			keepalive 30s
 			keepalive_idle_conns 20
 		}
+		lb_policy round_robin
 		health_uri /health
 		health_interval 30s
 		health_timeout 5s
@@ -111,8 +141,10 @@ api.askknock.com {
 
 # Grafana monitoring (internal access)
 grafana.askknock.com {
-	reverse_proxy knock-grafana:3001 {
+	reverse_proxy localhost:3001 {
 		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Forwarded-Proto {scheme}
 	}
 
 	header {
