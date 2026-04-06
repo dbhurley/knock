@@ -19,7 +19,7 @@ UPDATE people SET duplicate_group_id = NULL, duplicate_confidence = NULL, is_pri
 WITH email_dupes AS (
   SELECT
     email_primary,
-    MIN(id) AS primary_id,
+    MIN(id::TEXT)::UUID AS primary_id,
     gen_random_uuid() AS group_id
   FROM people
   WHERE email_primary IS NOT NULL
@@ -49,7 +49,7 @@ WITH name_org_dupes AS (
   SELECT
     LOWER(TRIM(full_name)) AS norm_name,
     LOWER(TRIM(current_organization)) AS norm_org,
-    MIN(id) AS primary_id,
+    MIN(id::TEXT)::UUID AS primary_id,
     gen_random_uuid() AS group_id
   FROM people
   WHERE duplicate_group_id IS NULL  -- Skip already-flagged

@@ -156,7 +156,7 @@ SET school_type_experience = ARRAY(
 FROM schools s
 WHERE p.current_school_id = s.id
   AND s.school_type IS NOT NULL
-  AND (p.school_type_experience IS NULL OR NOT (p.school_type_experience @> ARRAY[s.school_type]));
+  AND (p.school_type_experience IS NULL OR NOT (p.school_type_experience @> ARRAY[s.school_type]::TEXT[]));
 
 DO $$
 DECLARE cnt INTEGER;
