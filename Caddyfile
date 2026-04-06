@@ -56,7 +56,7 @@ askknock.com {
 
 # OpenClaw Gateway dashboard (token-protected)
 janet.askknock.com {
-	reverse_proxy localhost:3000 {
+	reverse_proxy 172.18.0.1:3000 {
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
@@ -99,7 +99,7 @@ api.askknock.com {
 	header Access-Control-Allow-Methods "GET, POST, PATCH, PUT, DELETE, OPTIONS"
 	header Access-Control-Allow-Headers "Content-Type, X-API-Key, Authorization"
 
-	reverse_proxy localhost:4000 {
+	reverse_proxy knock-api:4000 {
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
@@ -107,10 +107,6 @@ api.askknock.com {
 			keepalive 30s
 			keepalive_idle_conns 20
 		}
-		lb_policy round_robin
-		health_uri /health
-		health_interval 30s
-		health_timeout 5s
 	}
 
 	encode gzip zstd
@@ -141,7 +137,7 @@ api.askknock.com {
 
 # Grafana monitoring (internal access)
 grafana.askknock.com {
-	reverse_proxy localhost:3001 {
+	reverse_proxy knock-grafana:3001 {
 		header_up X-Real-IP {remote_host}
 		header_up X-Forwarded-For {remote_host}
 		header_up X-Forwarded-Proto {scheme}
