@@ -18,7 +18,7 @@ UPDATE people SET duplicate_group_id = NULL, duplicate_confidence = NULL, is_pri
 
 WITH email_dupes AS (
   SELECT
-    email_primary,
+    LOWER(TRIM(email_primary)) AS norm_email,
     MIN(id::TEXT)::UUID AS primary_id,
     gen_random_uuid() AS group_id
   FROM people
@@ -33,7 +33,7 @@ SET duplicate_group_id = ed.group_id,
     is_primary_record = (p.id = ed.primary_id),
     updated_at = NOW()
 FROM email_dupes ed
-WHERE LOWER(TRIM(p.email_primary)) = LOWER(TRIM(ed.email_primary));
+WHERE LOWER(TRIM(p.email_primary)) = ed.norm_email;
 
 DO $$
 DECLARE cnt INTEGER;
