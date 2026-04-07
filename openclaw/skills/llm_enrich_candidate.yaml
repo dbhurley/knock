@@ -1,0 +1,64 @@
+name: llm_enrich_candidate
+description: |
+  Use Claude to enrich a candidate's profile by reading their bio from the school website.
+  Extracts education history, specializations, leadership style, years of experience, and
+  notable strengths. This is the highest-quality enrichment method and should be used on
+  important candidates (heads of school at large NAIS schools, candidates being presented
+  for active searches).
+
+  Cost: ~$0.01-0.03 per candidate using Claude Sonnet.
+
+trigger: |
+  - When a user asks Janet to "enrich" a specific candidate or person
+  - When preparing a candidate presentation and the data is sparse
+  - When researching a head of school whose profile is mostly empty
+  - When a user wants to find candidates' specializations or backgrounds
+
+usage: |
+  Run via shell:
+    /opt/knock/scripts/llm-enrich.py --person-id <UUID>           # one specific person
+    /opt/knock/scripts/llm-enrich.py --limit 10                    # batch of 10
+    /opt/knock/scripts/llm-enrich.py --limit 5 --dry-run           # preview only
+
+  Or via cron (already configured): runs 5 candidates every 6 hours.
+
+what_it_does: |
+  1. Fetches the candidate's school website homepage
+  2. Crawls the navigation looking for leadership/about/head-of-school pages
+  3. Finds the page that mentions the candidate by name
+  4. Extracts focused text around their name (~2,500 characters)
+  5. Sends to Claude with a structured extraction prompt
+  6. Parses the JSON response and updates the people table
+
+fields_extracted:
+  - education[]:           {institution, degree, field_of_study, year, is_education_leadership}
+  - alma_mater:            "Most prominent institution"
+  - highest_degree:        Doctorate | Masters | Bachelors
+  - years_experience:      Integer
+  - specializations[]:     fundraising, stem, dei, boarding, college_prep, arts, etc.
+  - leadership_style[]:    collaborative, visionary, transformational, etc.
+  - strengths[]:           Short concrete phrases about accomplishments
+
+quality_notes: |
+  - Only extracts information that is clearly present in the bio
+  - Returns empty {} if the bio is too sparse or doesn't describe this person
+  - Only uses specializations/leadership_style values from a controlled list
+  - Inserts into person_education table with ON CONFLICT DO NOTHING
+  - Updates last_enriched_at timestamp on every attempt
+
+example_extraction:
+  person: "Scott Harsh @ Greater Atlanta Christian School"
+  result:
+    education:
+      - {institution: "Harding University", degree: "B.A.", field_of_study: "Math"}
+      - {institution: "University of Georgia", degree: "M.Ed.", field_of_study: "Education"}
+      - {institution: "Georgia State University", degree: "Ed.S.", field_of_study: "Educational Leadership"}
+      - {institution: "Abilene Christian University", degree: "Ed.D.", field_of_study: "Organizational Leadership"}
+    alma_mater: "Abilene Christian University"
+    highest_degree: "Doctorate"
+    years_experience: 29
+    specializations: [curriculum_development, strategic_planning, college_prep]
+    leadership_style: [servant, visionary]
+    strengths:
+      - "Nearly 30 years at GAC across teaching, principal, VP, and President roles"
+      - "Doctorate in Organizational Leadership applied to Christian school leadership"
