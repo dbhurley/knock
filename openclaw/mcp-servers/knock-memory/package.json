@@ -1,0 +1,11 @@
+{
+  "name": "knock-memory",
+  "version": "1.0.0",
+  "description": "Janet's memory MCP server — recall, store, supersede, ledger",
+  "type": "module",
+  "main": "server.mjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.28.0",
+    "pg": "^8.13.1"
+  }
+}
