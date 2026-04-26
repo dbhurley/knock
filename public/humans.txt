@@ -1,0 +1,6 @@
+/* TEAM */
+Founder: David Hurley
+Site: https://dbhurley.com
+Twitter: @dbhurley
+/* SITE */
+Software: Node.js, Fastify, TypeScript, Python, FastAPI, PostgreSQL 16, Redis, Caddy, OpenClaw

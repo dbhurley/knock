@@ -1,0 +1,17 @@
+# Knock
+
+> Fixed-price executive recruiting for private and independent K-12 schools.
+
+Knock is built by David Hurley (https://dbhurley.com), founder of Plasmate Labs and creator of the Adaptive Convergence Protocol (ACP).
+
+## About
+Knock is a specialized executive search firm for the private and independent school sector in the United States. Unlike traditional recruiting firms that charge a percentage of salary, Knock uses fixed-price salary bands ranging from $20K to $125K. The platform includes an AI office manager named Janet that handles intake, sourcing, and candidate matching across a database of 23,000+ schools and 3,700+ education leaders, supported by a 10-factor weighted scoring engine and automated enrichment pipeline.
+
+## Links
+- Website: https://askknock.com
+- Founder: https://dbhurley.com
+- Founder blog: https://dbhurley.com/blog
+- Ventures: https://dbhurley.com/startups
+
+## Part of the DBH Ventures portfolio
+https://dbhurley.com/startups
