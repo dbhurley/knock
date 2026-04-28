@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Status | Knock Executive Search</title>
+    <meta name="description" content="Check the status of your Knock executive search. Enter your reference number and contact email to see your search's current phase and pipeline progress.">
+    <meta name="robots" content="noindex">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafaf8; color: #1a1a1a; }
+        header { text-align: center; padding: 2rem 1rem 1.5rem; border-bottom: 1px solid #eee; }
+        header a { text-decoration: none; color: #1a1a1a; }
+        .logo-img { width: clamp(160px, 30vw, 240px); height: auto; }
+        header p { color: #888; font-size: 0.85rem; margin-top: 0.5rem; }
+        main { max-width: 680px; margin: 0 auto; padding: 2.5rem 1.5rem 4rem; }
+        h1 { font-size: 1.6rem; font-weight: 700; margin-bottom: 0.5rem; }
+        .intro { color: #666; line-height: 1.6; margin-bottom: 2rem; font-size: 0.95rem; }
+        .field { margin-bottom: 1.2rem; }
+        label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 0.35rem; color: #333; }
+        label .req { color: #b8860b; }
+        input {
+            width: 100%; padding: 0.7rem 0.9rem; border: 1.5px solid #ddd; border-radius: 6px;
+            font-size: 0.92rem; font-family: inherit; background: #fff; transition: border-color 0.2s;
+        }
+        input:focus { outline: none; border-color: #b8860b; }
+        .submit-btn {
+            display: block; width: 100%; padding: 0.9rem; margin-top: 1rem;
+            background: #b8860b; color: white; border: none; border-radius: 6px;
+            font-size: 1rem; font-weight: 700; letter-spacing: 0.03em; cursor: pointer;
+            transition: background 0.2s;
+        }
+        .submit-btn:hover { background: #9a7209; }
+        .submit-btn:disabled { background: #ccc; cursor: not-allowed; }
+        .error { background: #fdecea; border: 1px solid #f5b7b1; color: #922; padding: 0.8rem 1rem; border-radius: 6px; font-size: 0.9rem; margin-top: 1rem; display: none; }
+        .error.show { display: block; }
+
+        .status-panel { display: none; }
+        .status-panel.show { display: block; }
+        .status-card { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 1.6rem; margin-bottom: 1rem; }
+        .status-card h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 0.25rem; }
+        .status-card .school { color: #666; font-size: 0.9rem; }
+        .ref-num { display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f5f0e8; padding: 0.25rem 0.6rem; border-radius: 4px; color: #b8860b; font-weight: 700; font-size: 0.82rem; margin-top: 0.6rem; }
+
+        .phase-tracker { margin: 1.5rem 0 0.5rem; }
+        .phase-current { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; color: #b8860b; font-weight: 700; margin-bottom: 0.4rem; }
+        .phase-label { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.8rem; }
+        .progress-track { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin-bottom: 0.4rem; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #b8860b, #d4a017); border-radius: 3px; transition: width 0.4s ease; }
+        .progress-meta { font-size: 0.78rem; color: #888; }
+
+        .pipeline { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.2rem; }
+        .pipeline .stat { background: #faf6ee; border: 1px solid #f0e6d0; border-radius: 6px; padding: 0.9rem 1rem; }
+        .pipeline .stat .num { font-size: 1.6rem; font-weight: 700; color: #b8860b; line-height: 1; }
+        .pipeline .stat .lbl { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-top: 0.4rem; font-weight: 600; }
+
+        .meta-row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; border-top: 1px solid #f5f0e8; font-size: 0.85rem; }
+        .meta-row:first-of-type { border-top: none; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid #eee; }
+        .meta-row .k { color: #888; }
+        .meta-row .v { color: #333; font-weight: 500; }
+
+        .help { font-size: 0.85rem; color: #666; line-height: 1.6; margin-top: 1.5rem; }
+        .help a { color: #b8860b; text-decoration: none; }
+
+        footer { text-align: center; padding: 2rem; font-size: 0.8rem; color: #aaa; border-top: 1px solid #eee; }
+        footer a { color: #b8860b; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <a href="/"><img src="/knock-logo.svg" alt="Knock" class="logo-img"></a>
+        <p>Executive Search for Independent Schools</p>
+    </header>
+
+    <main>
+        <h1>Check Your Search Status</h1>
+        <p class="intro">Enter the reference number you received when you opened your search, plus the email you used at intake. We'll show you what phase your search is in and how the pipeline is progressing.</p>
+
+        <form id="status-form" novalidate>
+            <div class="field">
+                <label>Reference Number <span class="req">*</span></label>
+                <input type="text" name="search_number" required placeholder="KNK-2026-001" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="field">
+                <label>Contact Email <span class="req">*</span></label>
+                <input type="email" name="contact_email" required placeholder="you@yourschool.org">
+            </div>
+            <button type="submit" class="submit-btn" id="submit-btn">Check Status</button>
+            <div class="error" id="error"></div>
+        </form>
+
+        <div class="status-panel" id="status-panel">
+            <div class="status-card">
+                <h2 id="position-title"></h2>
+                <div class="school" id="school-name"></div>
+                <div class="ref-num" id="ref-num"></div>
+
+                <div class="phase-tracker">
+                    <div class="phase-current">Current phase</div>
+                    <div class="phase-label" id="phase-label"></div>
+                    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+                    <div class="progress-meta" id="progress-meta"></div>
+                </div>
+
+                <div class="pipeline">
+                    <div class="stat">
+                        <div class="num" id="num-identified">0</div>
+                        <div class="lbl">Candidates identified</div>
+                    </div>
+                    <div class="stat">
+                        <div class="num" id="num-presented">0</div>
+                        <div class="lbl">Presented to committee</div>
+                    </div>
+                </div>
+
+                <div class="meta-row"><span class="k">Search opened</span><span class="v" id="opened-at"></span></div>
+                <div class="meta-row"><span class="k">Last updated</span><span class="v" id="updated-at"></span></div>
+                <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v" id="target-start"></span></div>
+            </div>
+
+            <p class="help">Questions about where things stand? Reply to your last note from Janet, or email <a href="mailto:janet@askknock.com">janet@askknock.com</a>. Status here updates whenever Janet moves the search forward.</p>
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Knock Executive Search &middot; <a href="mailto:hello@askknock.com">hello@askknock.com</a></p>
+    </footer>
+
+    <script>
+        const form = document.getElementById('status-form');
+        const errEl = document.getElementById('error');
+        const panel = document.getElementById('status-panel');
+        const btn = document.getElementById('submit-btn');
+
+        function fmtDate(iso) {
+            if (!iso) return '—';
+            try {
+                return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+            } catch (e) { return iso; }
+        }
+
+        function showError(msg) {
+            errEl.textContent = msg;
+            errEl.classList.add('show');
+            panel.classList.remove('show');
+        }
+
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            errEl.classList.remove('show');
+            btn.disabled = true;
+            btn.textContent = 'Checking…';
+
+            const data = Object.fromEntries(new FormData(form));
+            data.search_number = (data.search_number || '').trim().toUpperCase();
+            data.contact_email = (data.contact_email || '').trim();
+
+            try {
+                const res = await fetch('https://api.askknock.com/api/v1/searches/status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                if (res.status === 404) {
+                    showError("We couldn't find a search matching that reference number and email. Double-check both, or reply to your last note from Janet.");
+                } else if (!res.ok) {
+                    showError("Something went wrong on our end. Please try again in a moment, or email janet@askknock.com.");
+                } else {
+                    const body = await res.json();
+                    const d = body.data;
+                    document.getElementById('position-title').textContent = d.position_title || 'Executive Search';
+                    document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
+                    document.getElementById('ref-num').textContent = d.search_number;
+                    document.getElementById('phase-label').textContent = d.phase_label;
+                    const pct = d.phase_total ? Math.max(4, Math.round((d.phase_step / d.phase_total) * 100)) : 0;
+                    document.getElementById('progress-fill').style.width = pct + '%';
+                    document.getElementById('progress-meta').textContent = 'Step ' + d.phase_step + ' of ' + d.phase_total;
+                    document.getElementById('num-identified').textContent = d.candidates_identified;
+                    document.getElementById('num-presented').textContent = d.candidates_presented;
+                    document.getElementById('opened-at').textContent = fmtDate(d.opened_at);
+                    document.getElementById('updated-at').textContent = fmtDate(d.status_changed_at);
+                    if (d.target_start_date) {
+                        document.getElementById('target-start').textContent = fmtDate(d.target_start_date);
+                        document.getElementById('target-row').style.display = 'flex';
+                    }
+                    panel.classList.add('show');
+                }
+            } catch (err) {
+                showError("Couldn't reach the Knock API. Check your connection and try again.");
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Check Status';
+        });
+
+        // Allow deep-linking via ?ref=KNK-2026-001 — pre-fills the field
+        const params = new URLSearchParams(location.search);
+        const ref = params.get('ref');
+        if (ref) form.elements['search_number'].value = ref;
+    </script>
+</body>
+</html>

@@ -99,6 +99,7 @@ Schools hire Knock when they need a new Head of School (or other executive). Jan
 |-----|---------|------|
 | `askknock.com` | Public landing page + intake form | None |
 | `askknock.com/start-search` | Search intake form (clean URL) | None |
+| `askknock.com/status` | Client search-status lookup (reference # + email) | None (verified by email match) |
 | `askknock.com/assess` | Candidate rating tool (Dan only) | Basic auth: `dan` / `knock2024assess` |
 | `janet.askknock.com` | OpenClaw Gateway dashboard | Token auth |
 | `api.askknock.com` | REST API | API key (X-API-Key header) |
@@ -314,6 +315,7 @@ GET    /api/v1/searches                   # List (filter by status)
 GET    /api/v1/searches/:id               # Detail
 POST   /api/v1/searches                   # Create
 PATCH  /api/v1/searches/:id               # Update
+POST   /api/v1/searches/status            # Public client-facing status lookup (search_number + contact_email, no API key)
 GET    /api/v1/searches/:id/candidates    # Candidate pipeline
 POST   /api/v1/searches/:id/candidates    # Add candidate
 PATCH  /api/v1/searches/:id/candidates/:cid # Update status
@@ -607,26 +609,33 @@ knock/
 
 ## 16. Roadmap & Next Steps
 
+### Stickiness Strategy
+The 10–16-week search engagement is the key window. Each touchpoint that gives the client a reason to come back to a Knock-controlled surface (vs. waiting for an email) deepens habituation and reduces shop-around risk. Priorities are ordered to maximize return-visits per active search.
+
+### Recently Shipped (2026-04-28)
+- **Public search status page** at `askknock.com/status` (and deep-linkable via `?ref=KNK-XXXX-NNN`) — clients can self-check phase, candidate pipeline, and last-update date using their reference number plus contact email. Verifies via email match against `searches.client_contact_email` (404 on any mismatch — does not disclose existence). Backed by `POST /api/v1/searches/status`. The intake success screen now points new clients here directly.
+
 ### Immediate Priority
 1. **Dan rates candidates** via /assess tool — until knock_rating is populated, matching can't distinguish quality
 2. **Alternative email pattern testing** — flast, firstlast for the 1,484 schools where first.last was rejected
 3. **Board member email enrichment** — once board emails exist, the board-segment newsletter lists will populate
+4. **Status-page email reminders** — when a search's status changes, send the client a one-line "your search just moved to X — see details at askknock.com/status?ref=…" email. Closes the loop on the new status surface.
 
 ### Short-term (Weeks)
-4. **Outreach automation** — Janet sends first-touch emails to candidates for active searches
-5. **Client portal** — School search committees can log in and see pipeline status
-6. **LLM enrichment at scale** — Increase batch sizes, add cost tracking
+5. **Outreach automation** — Janet sends first-touch emails to candidates for active searches
+6. **Authenticated client portal v1** — extend status page with named-finalist cards, redacted committee notes, and a place for the client to leave reactions (graduated from the email-verified status lookup)
+7. **LLM enrichment at scale** — Increase batch sizes, add cost tracking
 
 ### Medium-term (Months)
-7. **LinkedIn integration** — Automated profile monitoring for career changes
-8. **CRM features** — Full client relationship management
-9. **Billing integration** — Invoice generation via Stripe or similar
-10. **Multi-consultant** — Support for multiple search consultants beyond Dan
+8. **LinkedIn integration** — Automated profile monitoring for career changes
+9. **CRM features** — Full client relationship management
+10. **Billing integration** — Invoice generation via Stripe or similar
+11. **Multi-consultant** — Support for multiple search consultants beyond Dan
 
 ### Long-term
-11. **Predictive transition model** — ML-based HOS transition prediction from signals
-12. **Candidate self-service** — Candidates can update their own profiles
-13. **Market analytics** — Public-facing industry reports to drive inbound
+12. **Predictive transition model** — ML-based HOS transition prediction from signals
+13. **Candidate self-service** — Candidates can update their own profiles
+14. **Market analytics** — Public-facing industry reports to drive inbound
 
 ---
 

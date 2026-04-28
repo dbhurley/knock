@@ -208,6 +208,7 @@
         <h2>Thank You!</h2>
         <p>Your inquiry has been received. Janet will review the details and be in touch within 24 hours to discuss next steps.</p>
         <div class="search-num" id="search-number"></div>
+        <p style="margin-top:1.2rem;font-size:0.9rem;">Save your reference number — you can check progress anytime at <a id="status-link" href="/status" style="color:#b8860b;text-decoration:none;font-weight:600;">askknock.com/status</a>.</p>
         <a href="/">Back to Knock</a>
     </div>
 
@@ -248,7 +249,11 @@
                 if (res.ok) {
                     const result = await res.json();
                     const numEl = document.getElementById('search-number');
-                    if (result.search_number) numEl.textContent = 'Reference: ' + result.search_number;
+                    if (result.search_number) {
+                        numEl.textContent = 'Reference: ' + result.search_number;
+                        const linkEl = document.getElementById('status-link');
+                        if (linkEl) linkEl.href = '/status?ref=' + encodeURIComponent(result.search_number);
+                    }
                     document.getElementById('success').classList.add('show');
                 } else {
                     // Fallback: send via email

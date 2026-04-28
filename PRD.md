@@ -1855,6 +1855,7 @@ closed_no_fill → re-opened as new search (with credit)
 - For Candidates: How to join the network
 - Contact: Get in touch, start a search
 - Blog/Insights: Industry thought leadership
+- **Status (`/status`)**: Client search-status lookup. Verifies the visitor by reference number (KNK-YYYY-NNN, returned at intake) plus the email captured on the intake form, then renders a redacted progress view: position, school, current phase (1–8), candidates identified, candidates presented to committee, and last-update date. Auth-exempt at the API layer (`POST /api/v1/searches/status`); on any mismatch returns 404 without disclosing existence. The intake success screen deep-links here as `?ref=KNK-YYYY-NNN` so new clients land prefilled. This is the first surface in the **stickiness strategy** — clients return to a Knock-controlled page throughout the 10–16-week engagement instead of waiting for an email.
 
 ---
 
@@ -1959,6 +1960,7 @@ GET    /api/v1/searches                   # List searches
 GET    /api/v1/searches/:id               # Get search detail
 POST   /api/v1/searches                   # Create search
 PATCH  /api/v1/searches/:id               # Update search
+POST   /api/v1/searches/status            # Public client status lookup (no API key) — body: { search_number, contact_email }; returns redacted phase + pipeline counts only on email match, 404 otherwise
 GET    /api/v1/searches/:id/candidates    # Candidates for this search
 POST   /api/v1/searches/:id/candidates    # Add candidate to search
 PATCH  /api/v1/searches/:id/candidates/:cid # Update candidate status

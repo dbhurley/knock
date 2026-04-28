@@ -74,9 +74,93 @@ const candidateListSchema = z.object({
   min_score: z.coerce.number().min(0).max(100).optional(),
 });
 
+// Public client-facing status lookup. The client supplies their search number
+// and the email used at intake; we only return redacted fields that are safe
+// to share with the school (no candidate PII, no internal IDs, no fees).
+const publicStatusSchema = z.object({
+  search_number: z.string().min(3).max(50),
+  contact_email: z.string().email().max(300),
+});
+
+const PUBLIC_STATUS_PHASES: Record<string, { label: string; step: number }> = {
+  intake:        { label: 'Intake review',           step: 1 },
+  scoping:       { label: 'Scoping & kickoff',       step: 2 },
+  sourcing:      { label: 'Sourcing candidates',     step: 3 },
+  screening:     { label: 'Screening interviews',    step: 4 },
+  presenting:    { label: 'Presenting finalists',    step: 5 },
+  client_interviews: { label: 'Client interviews',   step: 6 },
+  offer:         { label: 'Offer & negotiation',     step: 7 },
+  placed:        { label: 'Placed',                  step: 8 },
+  closed_no_fill:{ label: 'Closed (no placement)',   step: 8 },
+  cancelled:     { label: 'Cancelled',               step: 8 },
+  on_hold:       { label: 'On hold',                 step: 0 },
+};
+
 // ─── Routes ────────────────────────────────────────────────────────────────
 
 export default async function searchRoutes(app: FastifyInstance): Promise<void> {
+
+  // POST /api/v1/searches/status — Public status lookup (no API key)
+  // Clients verify ownership by supplying their search number plus the
+  // contact email captured at intake. Returns 404 on any mismatch so we
+  // don't disclose whether a search exists.
+  app.post('/api/v1/searches/status', async (request, reply) => {
+    const body = publicStatusSchema.parse(request.body);
+
+    const row = await queryOne<{
+      search_number: string;
+      position_title: string;
+      status: string;
+      status_changed_at: string;
+      created_at: string;
+      target_start_date: string | null;
+      candidates_identified: number;
+      candidates_presented: number;
+      school_name: string | null;
+      school_city: string | null;
+      school_state: string | null;
+      client_contact_email: string | null;
+    }>(
+      `SELECT s.search_number, s.position_title, s.status, s.status_changed_at,
+              s.created_at, s.target_start_date,
+              s.candidates_identified, s.candidates_presented,
+              sch.name AS school_name, sch.city AS school_city, sch.state AS school_state,
+              s.client_contact_email
+       FROM searches s
+       LEFT JOIN schools sch ON sch.id = s.school_id
+       WHERE s.search_number = $1`,
+      [body.search_number],
+    );
+
+    const expectedEmail = row?.client_contact_email?.trim().toLowerCase();
+    const providedEmail = body.contact_email.trim().toLowerCase();
+    if (!row || !expectedEmail || expectedEmail !== providedEmail) {
+      return reply.code(404).send({
+        error: 'Not found',
+        message: 'No search matches that reference number and email. Double-check both, or reply to your last note from Janet.',
+      });
+    }
+
+    const phase = PUBLIC_STATUS_PHASES[row.status] ?? { label: row.status, step: 0 };
+
+    reply.send({
+      data: {
+        search_number: row.search_number,
+        position_title: row.position_title,
+        school_name: row.school_name,
+        school_location: [row.school_city, row.school_state].filter(Boolean).join(', ') || null,
+        status: row.status,
+        phase_label: phase.label,
+        phase_step: phase.step,
+        phase_total: 8,
+        status_changed_at: row.status_changed_at,
+        opened_at: row.created_at,
+        target_start_date: row.target_start_date,
+        candidates_identified: row.candidates_identified ?? 0,
+        candidates_presented: row.candidates_presented ?? 0,
+      },
+    });
+  });
 
   // GET /api/v1/searches — List searches
   app.get('/api/v1/searches', async (request, reply) => {

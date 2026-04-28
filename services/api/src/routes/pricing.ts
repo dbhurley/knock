@@ -20,8 +20,6 @@ function findBandForSalary(salary: number): PricingBand | null {
       return band;
     }
   }
-  // Below minimum band
-  if (salary < PRICING_BANDS[0].salary_low) return null;
   return null;
 }
 
