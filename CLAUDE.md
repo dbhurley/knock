@@ -687,3 +687,32 @@ docker exec -i knock-postgres psql -U knock_admin -d knock < db/migrations/015_w
 ---
 
 *This document is the single source of truth for agents working on the Knock platform. When in doubt, query the database or SSH into the server — the code and data are the ultimate authority.*
+
+---
+
+## Claude Code Guidelines
+
+Behavioral guidelines to reduce common LLM coding mistakes. Bias toward caution over speed.
+
+### Think Before Coding
+- State assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them — do not pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what is confusing. Ask.
+
+### Simplicity First
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+### Surgical Changes
+- Do not "improve" adjacent code, comments, or formatting.
+- Do not refactor things that are not broken.
+- Match existing style, even if you would do it differently.
+- Every changed line should trace directly to the user's request.
+
+### Goal-Driven Execution
+- Transform tasks into verifiable goals with success criteria.
+- For multi-step tasks, state a brief plan with verification checkpoints.
+- Strong success criteria enable independent work. Weak criteria require constant clarification.
