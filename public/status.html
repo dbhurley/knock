@@ -59,6 +59,23 @@
         .meta-row .k { color: #888; }
         .meta-row .v { color: #333; font-weight: 500; }
 
+        .activity-card { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 1.2rem 1.4rem; margin-bottom: 1rem; display: none; }
+        .activity-card.show { display: block; }
+        .activity-card .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: #b8860b; font-weight: 700; margin-bottom: 0.5rem; }
+        .activity-card .summary { font-size: 0.95rem; color: #333; line-height: 1.5; }
+        .activity-card .when { font-size: 0.78rem; color: #888; margin-top: 0.5rem; }
+
+        .next-milestone { font-size: 0.82rem; color: #666; margin-top: 0.6rem; }
+        .next-milestone .arrow { color: #b8860b; font-weight: 700; }
+
+        .refresh-btn {
+            display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; margin-top: 1rem;
+            background: transparent; color: #b8860b; border: 1.5px solid #f0e6d0; border-radius: 6px;
+            font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+        }
+        .refresh-btn:hover { background: #faf6ee; border-color: #b8860b; }
+        .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
         .help { font-size: 0.85rem; color: #666; line-height: 1.6; margin-top: 1.5rem; }
         .help a { color: #b8860b; text-decoration: none; }
 
@@ -113,9 +130,23 @@
                     </div>
                 </div>
 
+                <div class="next-milestone" id="next-milestone" style="display:none">
+                    <span class="arrow">→</span> Next: <span id="next-milestone-label"></span>
+                </div>
+
                 <div class="meta-row"><span class="k">Search opened</span><span class="v" id="opened-at"></span></div>
                 <div class="meta-row"><span class="k">Last updated</span><span class="v" id="updated-at"></span></div>
                 <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v" id="target-start"></span></div>
+
+                <button type="button" class="refresh-btn" id="refresh-btn" title="Re-check status">
+                    <span>&#x21bb;</span> Refresh
+                </button>
+            </div>
+
+            <div class="activity-card" id="activity-card">
+                <div class="label">Latest update</div>
+                <div class="summary" id="activity-summary"></div>
+                <div class="when" id="activity-when"></div>
             </div>
 
             <p class="help">Questions about where things stand? Reply to your last note from Janet, or email <a href="mailto:janet@askknock.com">janet@askknock.com</a>. Status here updates whenever Janet moves the search forward.</p>
@@ -131,6 +162,8 @@
         const errEl = document.getElementById('error');
         const panel = document.getElementById('status-panel');
         const btn = document.getElementById('submit-btn');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const EMAIL_KEY = 'knock.status.email';
 
         function fmtDate(iso) {
             if (!iso) return '—';
@@ -139,10 +172,85 @@
             } catch (e) { return iso; }
         }
 
+        function fmtRelative(iso) {
+            if (!iso) return '';
+            const t = new Date(iso).getTime();
+            if (isNaN(t)) return '';
+            const diff = Date.now() - t;
+            const min = Math.round(diff / 60000);
+            if (min < 1) return 'just now';
+            if (min < 60) return min + ' min ago';
+            const hr = Math.round(min / 60);
+            if (hr < 24) return hr + ' hr ago';
+            const d = Math.round(hr / 24);
+            if (d < 7) return d + ' day' + (d === 1 ? '' : 's') + ' ago';
+            return fmtDate(iso);
+        }
+
         function showError(msg) {
             errEl.textContent = msg;
             errEl.classList.add('show');
             panel.classList.remove('show');
+        }
+
+        function renderStatus(d) {
+            document.getElementById('position-title').textContent = d.position_title || 'Executive Search';
+            document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
+            document.getElementById('ref-num').textContent = d.search_number;
+            document.getElementById('phase-label').textContent = d.phase_label;
+            const pct = typeof d.progress_percent === 'number'
+                ? Math.max(4, d.progress_percent)
+                : (d.phase_total ? Math.max(4, Math.round((d.phase_step / d.phase_total) * 100)) : 0);
+            document.getElementById('progress-fill').style.width = pct + '%';
+            document.getElementById('progress-meta').textContent = 'Step ' + d.phase_step + ' of ' + d.phase_total;
+
+            const nextEl = document.getElementById('next-milestone');
+            if (d.next_milestone_label) {
+                document.getElementById('next-milestone-label').textContent = d.next_milestone_label;
+                nextEl.style.display = 'block';
+            } else {
+                nextEl.style.display = 'none';
+            }
+
+            document.getElementById('num-identified').textContent = d.candidates_identified;
+            document.getElementById('num-presented').textContent = d.candidates_presented;
+            document.getElementById('opened-at').textContent = fmtDate(d.opened_at);
+            document.getElementById('updated-at').textContent = fmtDate(d.status_changed_at);
+            if (d.target_start_date) {
+                document.getElementById('target-start').textContent = fmtDate(d.target_start_date);
+                document.getElementById('target-row').style.display = 'flex';
+            } else {
+                document.getElementById('target-row').style.display = 'none';
+            }
+
+            const actCard = document.getElementById('activity-card');
+            if (d.last_activity_summary) {
+                document.getElementById('activity-summary').textContent = d.last_activity_summary;
+                document.getElementById('activity-when').textContent = fmtRelative(d.last_activity_at);
+                actCard.classList.add('show');
+            } else {
+                actCard.classList.remove('show');
+            }
+
+            panel.classList.add('show');
+        }
+
+        async function fetchStatus(searchNumber, contactEmail) {
+            const res = await fetch('https://api.askknock.com/api/v1/searches/status', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ search_number: searchNumber, contact_email: contactEmail })
+            });
+            if (res.status === 404) {
+                showError("We couldn't find a search matching that reference number and email. Double-check both, or reply to your last note from Janet.");
+                return null;
+            }
+            if (!res.ok) {
+                showError("Something went wrong on our end. Please try again in a moment, or email janet@askknock.com.");
+                return null;
+            }
+            const body = await res.json();
+            return body.data;
         }
 
         form.addEventListener('submit', async function(e) {
@@ -152,39 +260,17 @@
             btn.textContent = 'Checking…';
 
             const data = Object.fromEntries(new FormData(form));
-            data.search_number = (data.search_number || '').trim().toUpperCase();
-            data.contact_email = (data.contact_email || '').trim();
+            const searchNumber = (data.search_number || '').trim().toUpperCase();
+            const contactEmail = (data.contact_email || '').trim();
 
             try {
-                const res = await fetch('https://api.askknock.com/api/v1/searches/status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-
-                if (res.status === 404) {
-                    showError("We couldn't find a search matching that reference number and email. Double-check both, or reply to your last note from Janet.");
-                } else if (!res.ok) {
-                    showError("Something went wrong on our end. Please try again in a moment, or email janet@askknock.com.");
-                } else {
-                    const body = await res.json();
-                    const d = body.data;
-                    document.getElementById('position-title').textContent = d.position_title || 'Executive Search';
-                    document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
-                    document.getElementById('ref-num').textContent = d.search_number;
-                    document.getElementById('phase-label').textContent = d.phase_label;
-                    const pct = d.phase_total ? Math.max(4, Math.round((d.phase_step / d.phase_total) * 100)) : 0;
-                    document.getElementById('progress-fill').style.width = pct + '%';
-                    document.getElementById('progress-meta').textContent = 'Step ' + d.phase_step + ' of ' + d.phase_total;
-                    document.getElementById('num-identified').textContent = d.candidates_identified;
-                    document.getElementById('num-presented').textContent = d.candidates_presented;
-                    document.getElementById('opened-at').textContent = fmtDate(d.opened_at);
-                    document.getElementById('updated-at').textContent = fmtDate(d.status_changed_at);
-                    if (d.target_start_date) {
-                        document.getElementById('target-start').textContent = fmtDate(d.target_start_date);
-                        document.getElementById('target-row').style.display = 'flex';
-                    }
-                    panel.classList.add('show');
+                const d = await fetchStatus(searchNumber, contactEmail);
+                if (d) {
+                    renderStatus(d);
+                    // Remember the email locally so refresh + return visits don't need to retype it.
+                    try { localStorage.setItem(EMAIL_KEY, contactEmail); } catch (_) {}
+                    refreshBtn.dataset.ref = searchNumber;
+                    refreshBtn.dataset.email = contactEmail;
                 }
             } catch (err) {
                 showError("Couldn't reach the Knock API. Check your connection and try again.");
@@ -194,10 +280,33 @@
             btn.textContent = 'Check Status';
         });
 
-        // Allow deep-linking via ?ref=KNK-2026-001 — pre-fills the field
+        refreshBtn.addEventListener('click', async function() {
+            const ref = refreshBtn.dataset.ref;
+            const email = refreshBtn.dataset.email;
+            if (!ref || !email) return;
+            refreshBtn.disabled = true;
+            const original = refreshBtn.innerHTML;
+            refreshBtn.innerHTML = '<span>&#x21bb;</span> Refreshing…';
+            try {
+                const d = await fetchStatus(ref, email);
+                if (d) renderStatus(d);
+            } catch (_) {
+                showError("Couldn't reach the Knock API. Check your connection and try again.");
+            }
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = original;
+        });
+
+        // Allow deep-linking via ?ref=KNK-2026-001 — pre-fills the field. If we
+        // also have a remembered email from a prior visit, prefill that too —
+        // the form still requires a click so the email/ref pair is verified.
         const params = new URLSearchParams(location.search);
         const ref = params.get('ref');
         if (ref) form.elements['search_number'].value = ref;
+        try {
+            const remembered = localStorage.getItem(EMAIL_KEY);
+            if (remembered) form.elements['contact_email'].value = remembered;
+        } catch (_) {}
     </script>
 </body>
 </html>

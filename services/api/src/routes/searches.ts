@@ -96,6 +96,24 @@ const PUBLIC_STATUS_PHASES: Record<string, { label: string; step: number }> = {
   on_hold:       { label: 'On hold',                 step: 0 },
 };
 
+// Forward order of progressing phases — used to compute the "next milestone"
+// label clients see on the status page. Terminal/non-progressing states
+// (placed, closed_no_fill, cancelled, on_hold) intentionally have no next.
+const PUBLIC_STATUS_FORWARD: string[] = [
+  'intake', 'scoping', 'sourcing', 'screening',
+  'presenting', 'client_interviews', 'offer', 'placed',
+];
+
+// Activity types we surface to clients. Internal-only types (e.g. fee_paid,
+// note_added) are filtered out so we never leak commercial or candidate detail.
+const PUBLIC_ACTIVITY_TYPES = new Set([
+  'status_change',
+  'candidate_added',
+  'presentation_sent',
+  'interview_scheduled',
+  'client_meeting',
+]);
+
 // ─── Routes ────────────────────────────────────────────────────────────────
 
 export default async function searchRoutes(app: FastifyInstance): Promise<void> {
@@ -143,6 +161,36 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
 
     const phase = PUBLIC_STATUS_PHASES[row.status] ?? { label: row.status, step: 0 };
 
+    // Compute the next milestone (label only — clients don't see internal codes).
+    const forwardIdx = PUBLIC_STATUS_FORWARD.indexOf(row.status);
+    const nextStatus = forwardIdx >= 0 && forwardIdx < PUBLIC_STATUS_FORWARD.length - 1
+      ? PUBLIC_STATUS_FORWARD[forwardIdx + 1]
+      : null;
+    const nextMilestoneLabel = nextStatus
+      ? PUBLIC_STATUS_PHASES[nextStatus]?.label ?? null
+      : null;
+
+    const progressPercent = phase.step > 0
+      ? Math.min(100, Math.round((phase.step / 8) * 100))
+      : 0;
+
+    // Most recent client-visible activity. Filtering inside SQL keeps internal
+    // notes and commercial activity out of the response by construction.
+    const activityTypes = Array.from(PUBLIC_ACTIVITY_TYPES);
+    const activity = await queryOne<{
+      activity_type: string;
+      description: string | null;
+      created_at: string;
+    }>(
+      `SELECT activity_type, description, created_at
+       FROM search_activities
+       WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
+         AND activity_type = ANY($2::text[])
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [row.search_number, activityTypes],
+    );
+
     reply.send({
       data: {
         search_number: row.search_number,
@@ -153,11 +201,15 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_label: phase.label,
         phase_step: phase.step,
         phase_total: 8,
+        progress_percent: progressPercent,
+        next_milestone_label: nextMilestoneLabel,
         status_changed_at: row.status_changed_at,
         opened_at: row.created_at,
         target_start_date: row.target_start_date,
         candidates_identified: row.candidates_identified ?? 0,
         candidates_presented: row.candidates_presented ?? 0,
+        last_activity_at: activity?.created_at ?? null,
+        last_activity_summary: activity?.description ?? null,
       },
     });
   });

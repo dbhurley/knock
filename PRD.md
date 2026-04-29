@@ -1960,7 +1960,7 @@ GET    /api/v1/searches                   # List searches
 GET    /api/v1/searches/:id               # Get search detail
 POST   /api/v1/searches                   # Create search
 PATCH  /api/v1/searches/:id               # Update search
-POST   /api/v1/searches/status            # Public client status lookup (no API key) — body: { search_number, contact_email }; returns redacted phase + pipeline counts only on email match, 404 otherwise
+POST   /api/v1/searches/status            # Public client status lookup (no API key) — body: { search_number, contact_email }; on email match, returns redacted phase, progress_percent, next_milestone_label, candidate pipeline counts, last_activity_at + last_activity_summary (whitelisted activity types only); 404 otherwise
 GET    /api/v1/searches/:id/candidates    # Candidates for this search
 POST   /api/v1/searches/:id/candidates    # Add candidate to search
 PATCH  /api/v1/searches/:id/candidates/:cid # Update candidate status
@@ -2149,7 +2149,11 @@ Telegram (alert channel)
 - [ ] Feedback collection and iteration
 - [ ] Additional data source integrations
 - [ ] Advanced analytics and reporting
-- [ ] Client portal features
+- [x] Client portal v0 — public search-status lookup at `askknock.com/status` (shipped 2026-04-28)
+- [x] Stickier status surface — progress %, next-milestone label, last-activity card, refresh button, email-remembered locally (shipped 2026-04-29)
+- [ ] Status-change email reminders (deep-links into status page via `?ref=`)
+- [ ] Janet writes `search_activities` rows on every advancement so the "Latest update" card stays fresh
+- [ ] Authenticated client portal v1 — named-finalist cards, redacted committee notes, client reactions
 - [ ] Candidate self-service features
 
 ---
@@ -2409,6 +2413,8 @@ LOG_LEVEL=info
 | Version | Date | Author | Changes |
 |---|---|---|---|
 | 1.0 | 2026-03-27 | Knock Team | Initial PRD |
+| 1.1 | 2026-04-28 | Knock Team | Added public client search-status surface (askknock.com/status, `POST /api/v1/searches/status`) — first stickiness milestone of Phase 8 |
+| 1.2 | 2026-04-29 | Knock Team | Status-page v1.1: response now includes `progress_percent`, `next_milestone_label`, `last_activity_at`/`last_activity_summary` (whitelisted activity types only); status page shows next-milestone hint, latest-update card, refresh button, locally-remembered email. Build hygiene: `/health` returns `uptime_seconds`, integration tests rewired, API package gains `lint` + `test` scripts |
 
 ---
 

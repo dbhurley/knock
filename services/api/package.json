@@ -7,7 +7,9 @@
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "if [ -n \"$API_URL\" ]; then node --test --import tsx src/__tests__; else echo 'Skipping integration tests (set API_URL to enable)'; fi"
   },
   "dependencies": {
     "fastify": "^5.2.1",

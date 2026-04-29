@@ -11,6 +11,7 @@ export default async function healthRoutes(app: FastifyInstance): Promise<void> 
 
     reply.code(code).send({
       status,
+      uptime_seconds: Math.floor(process.uptime()),
       timestamp: new Date().toISOString(),
       services: {
         database: dbOk ? 'connected' : 'disconnected',

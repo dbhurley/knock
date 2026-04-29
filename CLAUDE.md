@@ -1,7 +1,7 @@
 # CLAUDE.md — Knock Executive Search Platform
 
 > Complete system documentation for AI agents working on this codebase.
-> Last updated: 2026-04-09
+> Last updated: 2026-04-29
 
 ---
 
@@ -315,7 +315,7 @@ GET    /api/v1/searches                   # List (filter by status)
 GET    /api/v1/searches/:id               # Detail
 POST   /api/v1/searches                   # Create
 PATCH  /api/v1/searches/:id               # Update
-POST   /api/v1/searches/status            # Public client-facing status lookup (search_number + contact_email, no API key)
+POST   /api/v1/searches/status            # Public client-facing status lookup (search_number + contact_email, no API key) — returns phase, progress %, next milestone, last activity
 GET    /api/v1/searches/:id/candidates    # Candidate pipeline
 POST   /api/v1/searches/:id/candidates    # Add candidate
 PATCH  /api/v1/searches/:id/candidates/:cid # Update status
@@ -615,11 +615,16 @@ The 10–16-week search engagement is the key window. Each touchpoint that gives
 ### Recently Shipped (2026-04-28)
 - **Public search status page** at `askknock.com/status` (and deep-linkable via `?ref=KNK-XXXX-NNN`) — clients can self-check phase, candidate pipeline, and last-update date using their reference number plus contact email. Verifies via email match against `searches.client_contact_email` (404 on any mismatch — does not disclose existence). Backed by `POST /api/v1/searches/status`. The intake success screen now points new clients here directly.
 
+### Recently Shipped (2026-04-29)
+- **Stickier status page (v1.1)** — the public status response now also returns `progress_percent`, `next_milestone_label`, `last_activity_at`, and `last_activity_summary`. The page surfaces the next milestone after the phase tracker, shows a "Latest update" card sourced from a redacted whitelist of `search_activities` types (`status_change`, `candidate_added`, `presentation_sent`, `interview_scheduled`, `client_meeting`), remembers the client's email locally so refresh + return visits don't require retyping, and exposes a manual Refresh button. Each Janet-driven activity is now a reason for a return visit.
+- **Build hygiene** — `/health` now returns `uptime_seconds`; the broken `health.test.ts` was rewritten to match the actual handler contract (status `'healthy'`/`'degraded'`, services block); `services/api/package.json` gained `lint` and `test` scripts so the PR Tests workflow doesn't silently no-op (integration tests run only when `API_URL` is set).
+
 ### Immediate Priority
 1. **Dan rates candidates** via /assess tool — until knock_rating is populated, matching can't distinguish quality
 2. **Alternative email pattern testing** — flast, firstlast for the 1,484 schools where first.last was rejected
 3. **Board member email enrichment** — once board emails exist, the board-segment newsletter lists will populate
-4. **Status-page email reminders** — when a search's status changes, send the client a one-line "your search just moved to X — see details at askknock.com/status?ref=…" email. Closes the loop on the new status surface.
+4. **Status-page email reminders** — when a search's status changes, send the client a one-line "your search just moved to X — see details at askknock.com/status?ref=…" email. Closes the loop on the new status surface. (Status-page surface is now richer per 2026-04-29 update — reminders should deep-link with `?ref=` so the page lights up on first paint.)
+5. **Janet writes activities** — the new "Latest update" card only renders when `search_activities` rows exist; Janet should log a row each time she advances the search (currently only the intake form writes to `search_activities`). Until then, the card stays empty for most live searches.
 
 ### Short-term (Weeks)
 5. **Outreach automation** — Janet sends first-touch emails to candidates for active searches
