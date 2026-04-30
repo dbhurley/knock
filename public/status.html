@@ -65,8 +65,17 @@
         .activity-card .summary { font-size: 0.95rem; color: #333; line-height: 1.5; }
         .activity-card .when { font-size: 0.78rem; color: #888; margin-top: 0.5rem; }
 
+        .timeline { list-style: none; padding: 0; margin: 0.6rem 0 0; }
+        .timeline li { position: relative; padding: 0.55rem 0 0.55rem 1.1rem; border-left: 2px solid #f0e6d0; }
+        .timeline li:before { content: ''; position: absolute; left: -5px; top: 0.85rem; width: 8px; height: 8px; border-radius: 50%; background: #b8860b; }
+        .timeline li:last-child { border-left-color: transparent; }
+        .timeline .t-summary { font-size: 0.88rem; color: #333; line-height: 1.45; }
+        .timeline .t-when { font-size: 0.74rem; color: #999; margin-top: 0.15rem; }
+
         .next-milestone { font-size: 0.82rem; color: #666; margin-top: 0.6rem; }
         .next-milestone .arrow { color: #b8860b; font-weight: 700; }
+
+        .phase-pacing { font-size: 0.78rem; color: #888; margin-top: 0.3rem; }
 
         .refresh-btn {
             display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; margin-top: 1rem;
@@ -117,6 +126,7 @@
                     <div class="phase-label" id="phase-label"></div>
                     <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
                     <div class="progress-meta" id="progress-meta"></div>
+                    <div class="phase-pacing" id="phase-pacing" style="display:none"></div>
                 </div>
 
                 <div class="pipeline">
@@ -147,6 +157,7 @@
                 <div class="label">Latest update</div>
                 <div class="summary" id="activity-summary"></div>
                 <div class="when" id="activity-when"></div>
+                <ul class="timeline" id="activity-timeline" style="display:none"></ul>
             </div>
 
             <p class="help">Questions about where things stand? Reply to your last note from Janet, or email <a href="mailto:janet@askknock.com">janet@askknock.com</a>. Status here updates whenever Janet moves the search forward.</p>
@@ -212,6 +223,17 @@
                 nextEl.style.display = 'none';
             }
 
+            const pacingEl = document.getElementById('phase-pacing');
+            if (typeof d.days_in_phase === 'number') {
+                const dip = d.days_in_phase;
+                pacingEl.textContent = dip === 0
+                    ? 'In this phase since today'
+                    : 'In this phase for ' + dip + ' day' + (dip === 1 ? '' : 's');
+                pacingEl.style.display = 'block';
+            } else {
+                pacingEl.style.display = 'none';
+            }
+
             document.getElementById('num-identified').textContent = d.candidates_identified;
             document.getElementById('num-presented').textContent = d.candidates_presented;
             document.getElementById('opened-at').textContent = fmtDate(d.opened_at);
@@ -224,12 +246,37 @@
             }
 
             const actCard = document.getElementById('activity-card');
+            const timelineEl = document.getElementById('activity-timeline');
+            timelineEl.innerHTML = '';
             if (d.last_activity_summary) {
                 document.getElementById('activity-summary').textContent = d.last_activity_summary;
                 document.getElementById('activity-when').textContent = fmtRelative(d.last_activity_at);
                 actCard.classList.add('show');
+
+                // Render the rest of the timeline below the headline update.
+                // Skip index 0 since it's already shown as the headline.
+                const rest = Array.isArray(d.recent_activities) ? d.recent_activities.slice(1) : [];
+                if (rest.length > 0) {
+                    rest.forEach(function(a) {
+                        if (!a || !a.description) return;
+                        const li = document.createElement('li');
+                        const sum = document.createElement('div');
+                        sum.className = 't-summary';
+                        sum.textContent = a.description;
+                        const when = document.createElement('div');
+                        when.className = 't-when';
+                        when.textContent = fmtRelative(a.created_at);
+                        li.appendChild(sum);
+                        li.appendChild(when);
+                        timelineEl.appendChild(li);
+                    });
+                    timelineEl.style.display = timelineEl.children.length ? 'block' : 'none';
+                } else {
+                    timelineEl.style.display = 'none';
+                }
             } else {
                 actCard.classList.remove('show');
+                timelineEl.style.display = 'none';
             }
 
             panel.classList.add('show');

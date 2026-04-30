@@ -2151,8 +2151,9 @@ Telegram (alert channel)
 - [ ] Advanced analytics and reporting
 - [x] Client portal v0 — public search-status lookup at `askknock.com/status` (shipped 2026-04-28)
 - [x] Stickier status surface — progress %, next-milestone label, last-activity card, refresh button, email-remembered locally (shipped 2026-04-29)
-- [ ] Status-change email reminders (deep-links into status page via `?ref=`)
-- [ ] Janet writes `search_activities` rows on every advancement so the "Latest update" card stays fresh
+- [x] Status-page activity timeline + days-in-phase pacing + canonical `status_url` returned by intake + negative-path test coverage on the public status endpoint (shipped 2026-04-30)
+- [ ] Status-change email reminders (reuse `status_url` from intake response so the link is canonical)
+- [ ] Janet writes `search_activities` rows on every advancement so the "Latest update" card and timeline stay fresh
 - [ ] Authenticated client portal v1 — named-finalist cards, redacted committee notes, client reactions
 - [ ] Candidate self-service features
 
@@ -2415,6 +2416,7 @@ LOG_LEVEL=info
 | 1.0 | 2026-03-27 | Knock Team | Initial PRD |
 | 1.1 | 2026-04-28 | Knock Team | Added public client search-status surface (askknock.com/status, `POST /api/v1/searches/status`) — first stickiness milestone of Phase 8 |
 | 1.2 | 2026-04-29 | Knock Team | Status-page v1.1: response now includes `progress_percent`, `next_milestone_label`, `last_activity_at`/`last_activity_summary` (whitelisted activity types only); status page shows next-milestone hint, latest-update card, refresh button, locally-remembered email. Build hygiene: `/health` returns `uptime_seconds`, integration tests rewired, API package gains `lint` + `test` scripts |
+| 1.3 | 2026-04-30 | Knock Team | Status-page v1.2: status response now returns `recent_activities` (up to 5 redacted timeline entries) and `days_in_phase`; status page renders the activities as a dated timeline below the headline update and surfaces "In this phase for N days" pacing. Intake response now returns a canonical `status_url` (configurable via `PUBLIC_BASE_URL`). New `services/api/src/__tests__/status.test.ts` covers negative paths on the auth-exempt status endpoint (unknown ref, malformed email, no enumeration between ref-mismatch and ref-missing) |
 
 ---
 

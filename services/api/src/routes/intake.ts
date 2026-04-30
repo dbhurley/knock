@@ -160,10 +160,17 @@ export default async function intakeRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Canonical status URL — one source of truth for the success screen,
+    // welcome email, and the planned status-change reminder emails. Override
+    // with PUBLIC_BASE_URL if the public site ever moves.
+    const baseUrl = (process.env.PUBLIC_BASE_URL ?? 'https://askknock.com').replace(/\/+$/, '');
+    const statusUrl = `${baseUrl}/status?ref=${encodeURIComponent(searchNumber)}`;
+
     return reply.code(201).send({
       success: true,
       search_number: searchNumber,
       search_id: search!.id,
+      status_url: statusUrl,
       message: 'Search inquiry received. Janet will be in touch within 24 hours.',
     });
   });

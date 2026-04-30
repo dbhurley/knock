@@ -174,10 +174,12 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       ? Math.min(100, Math.round((phase.step / 8) * 100))
       : 0;
 
-    // Most recent client-visible activity. Filtering inside SQL keeps internal
+    // Recent client-visible activity. Filtering inside SQL keeps internal
     // notes and commercial activity out of the response by construction.
+    // We return up to 5 so the status page can render a small timeline —
+    // each return visit feels richer than "one stale last update".
     const activityTypes = Array.from(PUBLIC_ACTIVITY_TYPES);
-    const activity = await queryOne<{
+    const activities = await query<{
       activity_type: string;
       description: string | null;
       created_at: string;
@@ -187,9 +189,22 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
        WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
          AND activity_type = ANY($2::text[])
        ORDER BY created_at DESC
-       LIMIT 1`,
+       LIMIT 5`,
       [row.search_number, activityTypes],
     );
+
+    const latest = activities[0] ?? null;
+
+    // Time spent in the current phase — a simple, honest pacing signal.
+    // Only computed when status_changed_at is populated and the search is
+    // still in a progressing phase (terminal/non-progressing → null).
+    let daysInPhase: number | null = null;
+    if (row.status_changed_at && PUBLIC_STATUS_FORWARD.includes(row.status) && row.status !== 'placed') {
+      const ms = Date.now() - new Date(row.status_changed_at).getTime();
+      if (!Number.isNaN(ms) && ms >= 0) {
+        daysInPhase = Math.floor(ms / 86_400_000);
+      }
+    }
 
     reply.send({
       data: {
@@ -204,12 +219,18 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
         status_changed_at: row.status_changed_at,
+        days_in_phase: daysInPhase,
         opened_at: row.created_at,
         target_start_date: row.target_start_date,
         candidates_identified: row.candidates_identified ?? 0,
         candidates_presented: row.candidates_presented ?? 0,
-        last_activity_at: activity?.created_at ?? null,
-        last_activity_summary: activity?.description ?? null,
+        last_activity_at: latest?.created_at ?? null,
+        last_activity_summary: latest?.description ?? null,
+        recent_activities: activities.map((a) => ({
+          activity_type: a.activity_type,
+          description: a.description,
+          created_at: a.created_at,
+        })),
       },
     });
   });
