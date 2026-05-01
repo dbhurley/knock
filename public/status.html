@@ -44,7 +44,8 @@
 
         .phase-tracker { margin: 1.5rem 0 0.5rem; }
         .phase-current { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; color: #b8860b; font-weight: 700; margin-bottom: 0.4rem; }
-        .phase-label { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.8rem; }
+        .phase-label { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.4rem; }
+        .phase-explainer { font-size: 0.85rem; color: #555; line-height: 1.5; margin-bottom: 0.8rem; }
         .progress-track { height: 6px; background: #eee; border-radius: 3px; overflow: hidden; margin-bottom: 0.4rem; }
         .progress-fill { height: 100%; background: linear-gradient(90deg, #b8860b, #d4a017); border-radius: 3px; transition: width 0.4s ease; }
         .progress-meta { font-size: 0.78rem; color: #888; }
@@ -124,6 +125,7 @@
                 <div class="phase-tracker">
                     <div class="phase-current">Current phase</div>
                     <div class="phase-label" id="phase-label"></div>
+                    <div class="phase-explainer" id="phase-explainer" style="display:none"></div>
                     <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
                     <div class="progress-meta" id="progress-meta"></div>
                     <div class="phase-pacing" id="phase-pacing" style="display:none"></div>
@@ -175,6 +177,24 @@
         const btn = document.getElementById('submit-btn');
         const refreshBtn = document.getElementById('refresh-btn');
         const EMAIL_KEY = 'knock.status.email';
+        const BASE_TITLE = document.title;
+
+        // Plain-English explainer per phase. Shown beneath the phase label so
+        // an early-stage search (no activities yet) still reads as alive.
+        // Keys mirror searches.status values from the API.
+        const PHASE_EXPLAINERS = {
+            intake:            "Janet is reviewing your intake and will confirm scope before kicking off.",
+            scoping:           "Aligning on the search profile, committee process, and timeline before sourcing begins.",
+            sourcing:          "Actively researching candidates against your school's profile — most slates take 2–4 weeks to assemble.",
+            screening:         "Speaking with prospective candidates to gauge fit, motivation, and availability.",
+            presenting:        "Preparing a curated slate of finalists for committee review.",
+            client_interviews: "Committee is meeting with finalists. Janet is collecting feedback after each round.",
+            offer:             "Finalist selected. Negotiating offer terms, references, and start date.",
+            placed:            "Placement complete. Janet stays in touch through the candidate's first 90 days.",
+            closed_no_fill:    "Search closed without a placement. Reach out if you'd like to debrief or restart.",
+            cancelled:         "Search cancelled at the school's request.",
+            on_hold:           "Search paused. Reach out to Janet when you're ready to resume."
+        };
 
         function fmtDate(iso) {
             if (!iso) return '—';
@@ -202,6 +222,7 @@
             errEl.textContent = msg;
             errEl.classList.add('show');
             panel.classList.remove('show');
+            document.title = BASE_TITLE;
         }
 
         function renderStatus(d) {
@@ -209,6 +230,22 @@
             document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
             document.getElementById('ref-num').textContent = d.search_number;
             document.getElementById('phase-label').textContent = d.phase_label;
+
+            // Tab title carries the phase + ref so a pinned tab is a useful
+            // reminder of where the search stands. Restored on form reset.
+            if (d.search_number && d.phase_label) {
+                document.title = d.search_number + ' · ' + d.phase_label + ' | Knock';
+            }
+
+            const explainerEl = document.getElementById('phase-explainer');
+            const explainer = PHASE_EXPLAINERS[d.status];
+            if (explainer) {
+                explainerEl.textContent = explainer;
+                explainerEl.style.display = 'block';
+            } else {
+                explainerEl.style.display = 'none';
+            }
+
             const pct = typeof d.progress_percent === 'number'
                 ? Math.max(4, d.progress_percent)
                 : (d.phase_total ? Math.max(4, Math.round((d.phase_step / d.phase_total) * 100)) : 0);

@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { query, queryOne } from '../lib/db.js';
+import { query, queryOne, execute } from '../lib/db.js';
 import type { PaginatedResponse, Search, SearchCandidate } from '../types/index.js';
 
 // ─── Validation Schemas ────────────────────────────────────────────────────
@@ -206,6 +206,11 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Personalized client data — never cache in shared/CDN/browser caches.
+    // The endpoint is auth-exempt by ref+email, so a leaked cache entry could
+    // reveal a search's progress to anyone who later hits the same URL.
+    reply.header('Cache-Control', 'no-store, private');
+
     reply.send({
       data: {
         search_number: row.search_number,
@@ -362,6 +367,17 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     ) as (keyof typeof body)[];
     if (keys.length === 0) return reply.code(400).send({ error: 'No fields to update' });
 
+    // Capture the prior status so we can log a status_change row that names
+    // both endpoints. The status surface only renders activities, so an
+    // implicit log here means every transition appears on the client's
+    // timeline — no reliance on Janet remembering to write a row.
+    const prior = body.status
+      ? await queryOne<{ status: string }>(
+          `SELECT status FROM searches WHERE id = $1`,
+          [id],
+        )
+      : null;
+
     // If status is changing, also update status_changed_at
     const extraSets: string[] = [];
     if (body.status) {
@@ -378,6 +394,20 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       [id, ...vals],
     );
     if (!row) return reply.code(404).send({ error: 'Search not found' });
+
+    // Log the transition only when the status actually changed. The label
+    // uses public phase names so the same string can render verbatim on the
+    // client's status timeline.
+    if (body.status && prior && prior.status !== body.status) {
+      const fromLabel = PUBLIC_STATUS_PHASES[prior.status]?.label ?? prior.status;
+      const toLabel = PUBLIC_STATUS_PHASES[body.status]?.label ?? body.status;
+      await execute(
+        `INSERT INTO search_activities (search_id, activity_type, description, performed_by, metadata)
+         VALUES ($1, 'status_change', $2, 'system', $3::jsonb)`,
+        [id, `Search advanced: ${fromLabel} → ${toLabel}`, JSON.stringify({ from: prior.status, to: body.status })],
+      );
+    }
+
     reply.send({ data: row });
   });
 

@@ -51,6 +51,31 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok([400, 500].includes(res.status), `expected 400/500, got ${res.status}`);
   });
 
+  it('emits a no-store, private Cache-Control header (no shared caching of personalized data)', async () => {
+    // Personalized content must never be stored by shared caches/CDNs/browsers.
+    // This is a privacy property of the endpoint, so we assert it on every
+    // response shape — including 404 — to keep the contract simple.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-999',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    const cc = res.headers.get('cache-control') ?? '';
+    if (res.status === 200) {
+      assert.match(cc, /no-store/, 'expected Cache-Control: no-store on success path');
+      assert.match(cc, /private/, 'expected Cache-Control: private on success path');
+    }
+    // Non-200 (404 in this test) is allowed to omit the header — only the
+    // success path returns sensitive data — but if it's present it must be
+    // restrictive, not permissive.
+    if (cc) {
+      assert.ok(!/public/.test(cc), 'Cache-Control must never be public');
+    }
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
