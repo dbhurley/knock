@@ -86,6 +86,8 @@
         .refresh-btn:hover { background: #faf6ee; border-color: #b8860b; }
         .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+        .auto-refresh-hint { font-size: 0.72rem; color: #aaa; margin-top: 0.4rem; display: inline-block; }
+
         .help { font-size: 0.85rem; color: #666; line-height: 1.6; margin-top: 1.5rem; }
         .help a { color: #b8860b; text-decoration: none; }
 
@@ -153,6 +155,7 @@
                 <button type="button" class="refresh-btn" id="refresh-btn" title="Re-check status">
                     <span>&#x21bb;</span> Refresh
                 </button>
+                <span class="auto-refresh-hint" id="auto-refresh-hint">Auto-refreshes every 3 min while this tab is open</span>
             </div>
 
             <div class="activity-card" id="activity-card">
@@ -178,6 +181,14 @@
         const refreshBtn = document.getElementById('refresh-btn');
         const EMAIL_KEY = 'knock.status.email';
         const BASE_TITLE = document.title;
+        // Background auto-refresh: cheap way to turn an open tab into a live
+        // dashboard. With v1.3+ auto-logged status_change/candidate_added/
+        // presentation_sent activities, the timeline updates throughout the
+        // day on its own — every Janet-driven advancement appears without the
+        // client doing anything. Polling pauses when the tab is hidden so we
+        // don't waste requests on backgrounded tabs.
+        const AUTO_REFRESH_MS = 3 * 60 * 1000;
+        let autoRefreshTimer = null;
 
         // Plain-English explainer per phase. Shown beneath the phase label so
         // an early-stage search (no activities yet) still reads as alive.
@@ -337,6 +348,23 @@
             return body.data;
         }
 
+        function startAutoRefresh() {
+            stopAutoRefresh();
+            autoRefreshTimer = setInterval(async function() {
+                if (document.hidden) return;
+                const ref = refreshBtn.dataset.ref;
+                const email = refreshBtn.dataset.email;
+                if (!ref || !email) return;
+                try {
+                    const d = await fetchStatus(ref, email);
+                    if (d) renderStatus(d);
+                } catch (_) { /* swallow — manual refresh button still works */ }
+            }, AUTO_REFRESH_MS);
+        }
+        function stopAutoRefresh() {
+            if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+        }
+
         form.addEventListener('submit', async function(e) {
             e.preventDefault();
             errEl.classList.remove('show');
@@ -355,6 +383,7 @@
                     try { localStorage.setItem(EMAIL_KEY, contactEmail); } catch (_) {}
                     refreshBtn.dataset.ref = searchNumber;
                     refreshBtn.dataset.email = contactEmail;
+                    startAutoRefresh();
                 }
             } catch (err) {
                 showError("Couldn't reach the Knock API. Check your connection and try again.");
@@ -380,6 +409,16 @@
             refreshBtn.disabled = false;
             refreshBtn.innerHTML = original;
         });
+
+        // Pause polling on backgrounded tabs; resume on focus. Page Visibility
+        // API is cheap and avoids a needless request every 3 min on tabs the
+        // client has parked but not closed.
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && refreshBtn.dataset.ref && refreshBtn.dataset.email) {
+                refreshBtn.click();
+            }
+        });
+        window.addEventListener('beforeunload', stopAutoRefresh);
 
         // Allow deep-linking via ?ref=KNK-2026-001 — pre-fills the field. If we
         // also have a remembered email from a prior visit, prefill that too —

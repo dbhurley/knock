@@ -463,14 +463,17 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     const { id } = request.params as { id: string };
     const body = candidateCreateSchema.parse(request.body);
 
-    const row = await queryOne<SearchCandidate>(
+    // xmax = 0 on a row returned by an upsert means it was newly inserted (vs.
+    // updated). We only want to log a candidate_added activity on a true new
+    // add — re-PATCH-ing an existing search_candidate must not double-count.
+    const row = await queryOne<SearchCandidate & { is_new: boolean }>(
       `INSERT INTO search_candidates (search_id, person_id, status, match_score, match_reasoning, source, referred_by, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (search_id, person_id) DO UPDATE SET
          status = EXCLUDED.status,
          match_score = COALESCE(EXCLUDED.match_score, search_candidates.match_score),
          updated_at = NOW()
-       RETURNING *`,
+       RETURNING *, (xmax = 0) AS is_new`,
       [id, body.person_id, body.status, body.match_score ?? null, body.match_reasoning ?? null, body.source ?? null, body.referred_by ?? null, body.notes ?? null],
     );
 
@@ -481,6 +484,18 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       ) WHERE id = $1`,
       [id],
     );
+
+    // Auto-log a redacted candidate_added row so the public status timeline
+    // self-populates as Janet sources candidates — same pattern v1.3 used for
+    // status_change. Description is intentionally PII-free: the public
+    // endpoint never exposes candidate names, so this string must not either.
+    if (row?.is_new) {
+      await execute(
+        `INSERT INTO search_activities (search_id, activity_type, description, performed_by, related_person_id)
+         VALUES ($1, 'candidate_added', 'Candidate added to pipeline', 'system', $2)`,
+        [id, body.person_id],
+      );
+    }
 
     reply.code(201).send({ data: row });
   });
@@ -493,6 +508,15 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       (k) => body[k as keyof typeof body] !== undefined,
     ) as (keyof typeof body)[];
     if (keys.length === 0) return reply.code(400).send({ error: 'No fields to update' });
+
+    // Capture the prior status + person_id so we can log a presentation_sent
+    // row only on the actual transition into 'presented' (and only once).
+    const prior = body.status
+      ? await queryOne<{ status: string; person_id: string }>(
+          `SELECT status, person_id FROM search_candidates WHERE search_id = $1 AND id = $2`,
+          [id, cid],
+        )
+      : null;
 
     const sets = keys.map((k, i) => `${k} = $${i + 3}`);
     const vals = keys.map((k) => body[k]);
@@ -512,6 +536,19 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       [id, cid, ...vals],
     );
     if (!row) return reply.code(404).send({ error: 'Search candidate not found' });
+
+    // Auto-log presentation_sent on the transition into 'presented'. Mirrors
+    // the v1.3 status_change pattern: the client status timeline self-populates
+    // as the pipeline advances, with no reliance on Janet logging by hand.
+    // Description stays PII-free — the public endpoint redacts candidate names.
+    if (body.status === 'presented' && prior && prior.status !== 'presented') {
+      await execute(
+        `INSERT INTO search_activities (search_id, activity_type, description, performed_by, related_person_id)
+         VALUES ($1, 'presentation_sent', 'Candidate presented to committee', 'system', $2)`,
+        [id, prior.person_id],
+      );
+    }
+
     reply.send({ data: row });
   });
 }

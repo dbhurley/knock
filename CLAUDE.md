@@ -1,7 +1,7 @@
 # CLAUDE.md — Knock Executive Search Platform
 
 > Complete system documentation for AI agents working on this codebase.
-> Last updated: 2026-04-30
+> Last updated: 2026-05-02
 
 ---
 
@@ -631,12 +631,17 @@ The 10–16-week search engagement is the key window. Each touchpoint that gives
 - **Dynamic tab title on status page** — when a search loads, the browser tab title becomes `KNK-2026-001 · Sourcing | Knock` (instead of the static "Search Status | Knock"). Pinned/duplicated tabs become legible reminders of where each search stands — a small but compounding stickiness primitive for clients who keep the page open across the day.
 - **`Cache-Control: no-store, private` on `POST /api/v1/searches/status`** — personalized search data must never sit in shared/CDN/browser caches. Test coverage added: `Cache-Control` must include `no-store` + `private` on success and must never be `public`. Defensive header that complements the existing 404-on-mismatch contract.
 
+### Recently Shipped (2026-05-02)
+- **Auto-logged `candidate_added` activity (v1.4 stickiness)** — `POST /api/v1/searches/:id/candidates` now writes a redacted `search_activities` row (`'Candidate added to pipeline'`, `performed_by='system'`, `related_person_id` set) on every true insert. Detects insert-vs-upsert via the Postgres `xmax = 0` trick so re-PATCH-ing an existing candidate does not double-count. The public status timeline now self-populates as Janet sources candidates — closing roadmap item #5 for the `candidate_added` activity type.
+- **Auto-logged `presentation_sent` activity (v1.4 stickiness)** — `PATCH /api/v1/searches/:id/candidates/:cid` now writes a redacted `search_activities` row (`'Candidate presented to committee'`) when a candidate transitions *into* `'presented'` status (idempotent — no log when already presented). Same redaction discipline as `candidate_added`: the description string is identical to what the public endpoint surfaces, so PII can never leak. Closes roadmap item #5 for `presentation_sent`.
+- **Status-page background auto-refresh** — the status page now polls `POST /api/v1/searches/status` every 3 minutes while the tab is visible, and re-fetches immediately when the tab regains focus (Page Visibility API). With v1.3 + v1.4 auto-logging in place, the timeline genuinely updates throughout the day — turning the open tab from a one-shot lookup into a live dashboard. Polling is paused on backgrounded tabs to avoid wasted requests, and silently swallows failures so the manual Refresh button remains the recoverable fallback. A small "Auto-refreshes every 3 min while this tab is open" hint is shown next to the Refresh button so the behavior is discoverable.
+
 ### Immediate Priority
 1. **Dan rates candidates** via /assess tool — until knock_rating is populated, matching can't distinguish quality
 2. **Alternative email pattern testing** — flast, firstlast for the 1,484 schools where first.last was rejected
 3. **Board member email enrichment** — once board emails exist, the board-segment newsletter lists will populate
-4. **Status-page email reminders** — when a search's status changes, send the client a one-line "your search just moved to X — see details at askknock.com/status?ref=…" email. Closes the loop on the new status surface. The intake response exposes a canonical `status_url` field — reuse that exact string in the email body so the link, the success screen, and the reminder all agree. **The auto-logged status_change row from v1.3 is the natural trigger** — a single new cron/listener can transform "new system-authored status_change activity" into an outbound email without any new business logic.
-5. **Janet logs richer activities** — `status_change` is now automatic on every status PATCH, but the other client-visible activity types (`candidate_added`, `presentation_sent`, `interview_scheduled`, `client_meeting`) still rely on Janet (or downstream PATCH calls) writing rows. Each of these advancements is what makes the timeline feel alive between status transitions.
+4. **Status-page email reminders** — when a search's status changes, send the client a one-line "your search just moved to X — see details at askknock.com/status?ref=…" email. Closes the loop on the new status surface. The intake response exposes a canonical `status_url` field — reuse that exact string in the email body so the link, the success screen, and the reminder all agree. **The auto-logged status_change row from v1.3 is the natural trigger** — a single new cron/listener can transform "new system-authored status_change activity" into an outbound email without any new business logic. The same trigger pattern now also fires for `candidate_added` and `presentation_sent` — opening up "new candidate added to your pipeline" / "candidate just presented" reminder emails as natural extensions.
+5. **Remaining client-visible activity types** — `status_change`, `candidate_added`, and `presentation_sent` are now auto-logged. The two remaining client-visible types — `interview_scheduled` and `client_meeting` — still rely on Janet writing rows. They are stickier still (each is a concrete forthcoming touchpoint the client will see on the timeline) and should follow the same v1.3/v1.4 pattern once the API surfaces them as first-class write paths.
 
 ### Short-term (Weeks)
 5. **Outreach automation** — Janet sends first-touch emails to candidates for active searches
