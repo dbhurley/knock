@@ -549,6 +549,18 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       );
     }
 
+    // Auto-log interview_scheduled when a candidate moves into 'interviewing'.
+    // Same idempotent pattern: only the actual transition fires the row.
+    // Closes the v1.4 → v1.5 stickiness loop for client_interviews phase —
+    // the public timeline now self-populates through the full pipeline.
+    if (body.status === 'interviewing' && prior && prior.status !== 'interviewing') {
+      await execute(
+        `INSERT INTO search_activities (search_id, activity_type, description, performed_by, related_person_id)
+         VALUES ($1, 'interview_scheduled', 'Committee interview scheduled', 'system', $2)`,
+        [id, prior.person_id],
+      );
+    }
+
     reply.send({ data: row });
   });
 }

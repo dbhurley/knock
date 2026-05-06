@@ -62,16 +62,28 @@
 
         .activity-card { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 1.2rem 1.4rem; margin-bottom: 1rem; display: none; }
         .activity-card.show { display: block; }
+        .activity-card.is-new { border-color: #b8860b; box-shadow: 0 0 0 3px rgba(184,134,11,0.12); }
         .activity-card .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: #b8860b; font-weight: 700; margin-bottom: 0.5rem; }
         .activity-card .summary { font-size: 0.95rem; color: #333; line-height: 1.5; }
         .activity-card .when { font-size: 0.78rem; color: #888; margin-top: 0.5rem; }
 
         .timeline { list-style: none; padding: 0; margin: 0.6rem 0 0; }
-        .timeline li { position: relative; padding: 0.55rem 0 0.55rem 1.1rem; border-left: 2px solid #f0e6d0; }
-        .timeline li:before { content: ''; position: absolute; left: -5px; top: 0.85rem; width: 8px; height: 8px; border-radius: 50%; background: #b8860b; }
+        .timeline li { position: relative; padding: 0.55rem 0 0.55rem 1.6rem; border-left: 2px solid #f0e6d0; }
+        .timeline li:before { content: attr(data-icon); position: absolute; left: -10px; top: 0.55rem; width: 18px; height: 18px; border-radius: 50%; background: #b8860b; color: #fff; font-size: 0.62rem; font-weight: 700; line-height: 18px; text-align: center; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
         .timeline li:last-child { border-left-color: transparent; }
+        .timeline li.is-new { background: linear-gradient(90deg, rgba(184,134,11,0.08), transparent 60%); border-radius: 4px; }
+        .timeline li.is-new:before { box-shadow: 0 0 0 3px rgba(184,134,11,0.18); }
         .timeline .t-summary { font-size: 0.88rem; color: #333; line-height: 1.45; }
         .timeline .t-when { font-size: 0.74rem; color: #999; margin-top: 0.15rem; }
+        .timeline .t-new-tag { display: inline-block; margin-left: 0.4rem; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: #b8860b; font-weight: 700; vertical-align: 1px; }
+
+        .new-banner { background: #faf6ee; border: 1px solid #f0e6d0; border-radius: 6px; padding: 0.6rem 0.9rem; margin-bottom: 1rem; font-size: 0.85rem; color: #6a5b1f; display: none; }
+        .new-banner.show { display: block; }
+        .new-banner strong { color: #b8860b; }
+
+        .countdown { display: inline-block; margin-left: 0.4rem; font-size: 0.78rem; color: #b8860b; font-weight: 600; }
+        .countdown.urgent { color: #b8530b; }
+        .countdown.past { color: #888; font-weight: 500; }
 
         .next-milestone { font-size: 0.82rem; color: #666; margin-top: 0.6rem; }
         .next-milestone .arrow { color: #b8860b; font-weight: 700; }
@@ -119,6 +131,7 @@
         </form>
 
         <div class="status-panel" id="status-panel">
+            <div class="new-banner" id="new-banner"></div>
             <div class="status-card">
                 <h2 id="position-title"></h2>
                 <div class="school" id="school-name"></div>
@@ -150,7 +163,7 @@
 
                 <div class="meta-row"><span class="k">Search opened</span><span class="v" id="opened-at"></span></div>
                 <div class="meta-row"><span class="k">Last updated</span><span class="v" id="updated-at"></span></div>
-                <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v" id="target-start"></span></div>
+                <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v"><span id="target-start"></span><span class="countdown" id="target-countdown"></span></span></div>
 
                 <button type="button" class="refresh-btn" id="refresh-btn" title="Re-check status">
                     <span>&#x21bb;</span> Refresh
@@ -180,7 +193,19 @@
         const btn = document.getElementById('submit-btn');
         const refreshBtn = document.getElementById('refresh-btn');
         const EMAIL_KEY = 'knock.status.email';
+        const LAST_SEEN_KEY_PREFIX = 'knock.status.lastSeen.'; // suffixed with search ref
         const BASE_TITLE = document.title;
+
+        // Compact icon for each client-visible activity type. Two-letter glyphs
+        // are used instead of emoji so the visual style stays consistent with
+        // the rest of the page (Knock gold + neutral type).
+        const ACTIVITY_ICONS = {
+            status_change:        '→',
+            candidate_added:      '+',
+            presentation_sent:    '★',
+            interview_scheduled:  '#',
+            client_meeting:       '☎'
+        };
         // Background auto-refresh: cheap way to turn an open tab into a live
         // dashboard. With v1.3+ auto-logged status_change/candidate_added/
         // presentation_sent activities, the timeline updates throughout the
@@ -236,7 +261,13 @@
             document.title = BASE_TITLE;
         }
 
-        function renderStatus(d) {
+        function renderStatus(d, opts) {
+            // opts.commitHighWaterMark — true on initial form submission only.
+            // Auto-refresh re-renders MUST NOT bump the anchor, otherwise the
+            // "X new updates since you last checked" banner would vanish on
+            // the next poll. Anchoring at first-load is the sticky semantic
+            // we want: novelty persists for the entire viewing session.
+            const commitMark = !!(opts && opts.commitHighWaterMark);
             document.getElementById('position-title').textContent = d.position_title || 'Executive Search';
             document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
             document.getElementById('ref-num').textContent = d.search_number;
@@ -286,31 +317,92 @@
             document.getElementById('num-presented').textContent = d.candidates_presented;
             document.getElementById('opened-at').textContent = fmtDate(d.opened_at);
             document.getElementById('updated-at').textContent = fmtDate(d.status_changed_at);
+            const countdownEl = document.getElementById('target-countdown');
+            countdownEl.className = 'countdown';
+            countdownEl.textContent = '';
             if (d.target_start_date) {
                 document.getElementById('target-start').textContent = fmtDate(d.target_start_date);
                 document.getElementById('target-row').style.display = 'flex';
+                // Surface a weeks-remaining countdown so the target date isn't
+                // just a static line — it gives the client a concrete reason
+                // to check back as the date approaches. Urgent threshold = 30d.
+                const days = Math.round((new Date(d.target_start_date).getTime() - Date.now()) / 86_400_000);
+                if (!isNaN(days)) {
+                    if (days < 0) {
+                        countdownEl.textContent = '(target passed)';
+                        countdownEl.classList.add('past');
+                    } else if (days === 0) {
+                        countdownEl.textContent = '(today)';
+                        countdownEl.classList.add('urgent');
+                    } else if (days <= 30) {
+                        countdownEl.textContent = '(' + days + ' day' + (days === 1 ? '' : 's') + ' away)';
+                        countdownEl.classList.add('urgent');
+                    } else {
+                        const wks = Math.round(days / 7);
+                        countdownEl.textContent = '(~' + wks + ' week' + (wks === 1 ? '' : 's') + ' away)';
+                    }
+                }
             } else {
                 document.getElementById('target-row').style.display = 'none';
             }
 
             const actCard = document.getElementById('activity-card');
             const timelineEl = document.getElementById('activity-timeline');
+            const banner = document.getElementById('new-banner');
             timelineEl.innerHTML = '';
+            banner.classList.remove('show');
+
+            // "What's new since you last visited" — read the prior high-water
+            // mark from localStorage (per ref), count activities newer than
+            // that timestamp, and write the new mark back. This rewards return
+            // visits with novelty: clients see a concrete count of what
+            // changed, and individual rows are highlighted in the timeline.
+            const lastSeenKey = LAST_SEEN_KEY_PREFIX + d.search_number;
+            let lastSeen = null;
+            try { lastSeen = localStorage.getItem(lastSeenKey); } catch (_) {}
+            const lastSeenT = lastSeen ? new Date(lastSeen).getTime() : 0;
+            const acts = Array.isArray(d.recent_activities) ? d.recent_activities : [];
+            const newCount = lastSeen
+                ? acts.filter(function(a) {
+                    return a && a.created_at && new Date(a.created_at).getTime() > lastSeenT;
+                  }).length
+                : 0;
+            if (newCount > 0) {
+                banner.innerHTML = '<strong>' + newCount + ' new update' + (newCount === 1 ? '' : 's') +
+                    '</strong> since you last checked.';
+                banner.classList.add('show');
+            }
+
             if (d.last_activity_summary) {
                 document.getElementById('activity-summary').textContent = d.last_activity_summary;
                 document.getElementById('activity-when').textContent = fmtRelative(d.last_activity_at);
                 actCard.classList.add('show');
+                actCard.classList.toggle(
+                    'is-new',
+                    !!(lastSeen && d.last_activity_at &&
+                       new Date(d.last_activity_at).getTime() > lastSeenT),
+                );
 
                 // Render the rest of the timeline below the headline update.
                 // Skip index 0 since it's already shown as the headline.
-                const rest = Array.isArray(d.recent_activities) ? d.recent_activities.slice(1) : [];
+                const rest = acts.slice(1);
                 if (rest.length > 0) {
                     rest.forEach(function(a) {
                         if (!a || !a.description) return;
                         const li = document.createElement('li');
+                        li.setAttribute('data-icon', ACTIVITY_ICONS[a.activity_type] || '·');
+                        const isNew = lastSeen && a.created_at &&
+                            new Date(a.created_at).getTime() > lastSeenT;
+                        if (isNew) li.classList.add('is-new');
                         const sum = document.createElement('div');
                         sum.className = 't-summary';
                         sum.textContent = a.description;
+                        if (isNew) {
+                            const tag = document.createElement('span');
+                            tag.className = 't-new-tag';
+                            tag.textContent = 'New';
+                            sum.appendChild(tag);
+                        }
                         const when = document.createElement('div');
                         when.className = 't-when';
                         when.textContent = fmtRelative(a.created_at);
@@ -325,6 +417,13 @@
             } else {
                 actCard.classList.remove('show');
                 timelineEl.style.display = 'none';
+            }
+
+            // Stamp the high-water mark to the newest activity's timestamp so
+            // the next visit reflects only what's been added since this view.
+            // Only on initial load — see commitMark note above.
+            if (commitMark && acts.length > 0 && acts[0].created_at) {
+                try { localStorage.setItem(lastSeenKey, acts[0].created_at); } catch (_) {}
             }
 
             panel.classList.add('show');
@@ -378,7 +477,10 @@
             try {
                 const d = await fetchStatus(searchNumber, contactEmail);
                 if (d) {
-                    renderStatus(d);
+                    // Initial render: anchor the high-water mark for "new
+                    // since last visit." Subsequent auto-refresh and manual
+                    // refresh re-renders intentionally do not commit the mark.
+                    renderStatus(d, { commitHighWaterMark: true });
                     // Remember the email locally so refresh + return visits don't need to retype it.
                     try { localStorage.setItem(EMAIL_KEY, contactEmail); } catch (_) {}
                     refreshBtn.dataset.ref = searchNumber;
