@@ -74,6 +74,23 @@ const candidateListSchema = z.object({
   min_score: z.coerce.number().min(0).max(100).optional(),
 });
 
+// Manual write-path for activity types that aren't a side effect of another
+// API call. Currently the only such type clients see on the public timeline
+// is 'client_meeting' — every other PUBLIC_ACTIVITY_TYPES entry is auto-logged
+// elsewhere in this file. The whitelist is intentionally narrow so this
+// endpoint cannot become a backdoor for arbitrary activity rows.
+const WRITABLE_ACTIVITY_TYPES = ['client_meeting'] as const;
+const DEFAULT_ACTIVITY_DESCRIPTIONS: Record<(typeof WRITABLE_ACTIVITY_TYPES)[number], string> = {
+  client_meeting: 'Client meeting scheduled',
+};
+const activityCreateSchema = z.object({
+  activity_type: z.enum(WRITABLE_ACTIVITY_TYPES),
+  description: z.string().min(1).max(500).optional(),
+  related_person_id: z.string().uuid().optional(),
+  performed_by: z.string().max(200).optional(),
+  metadata: z.record(z.unknown()).optional(),
+});
+
 // Public client-facing status lookup. The client supplies their search number
 // and the email used at intake; we only return redacted fields that are safe
 // to share with the school (no candidate PII, no internal IDs, no fees).
@@ -113,6 +130,21 @@ const PUBLIC_ACTIVITY_TYPES = new Set([
   'interview_scheduled',
   'client_meeting',
 ]);
+
+// Pick a description verb that actually fits the transition. Earlier code
+// always wrote "Search advanced: X → Y" — fine for forward progress, badly
+// wrong on the public timeline for "Sourcing → On hold" or "→ Cancelled".
+// Branches are ordered most-specific first so terminal/pause states win
+// over the default forward-progression label.
+function describeStatusChange(fromStatus: string, toStatus: string): string {
+  const fromLabel = PUBLIC_STATUS_PHASES[fromStatus]?.label ?? fromStatus;
+  const toLabel = PUBLIC_STATUS_PHASES[toStatus]?.label ?? toStatus;
+  if (toStatus === 'on_hold')        return `Search paused: ${fromLabel} → ${toLabel}`;
+  if (toStatus === 'cancelled')      return `Search cancelled: ${fromLabel} → ${toLabel}`;
+  if (toStatus === 'closed_no_fill') return `Search closed without placement: ${fromLabel} → ${toLabel}`;
+  if (fromStatus === 'on_hold')      return `Search resumed: ${fromLabel} → ${toLabel}`;
+  return `Search advanced: ${fromLabel} → ${toLabel}`;
+}
 
 // ─── Routes ────────────────────────────────────────────────────────────────
 
@@ -397,14 +429,13 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
 
     // Log the transition only when the status actually changed. The label
     // uses public phase names so the same string can render verbatim on the
-    // client's status timeline.
+    // client's status timeline. Verb varies by direction so a pause/cancel
+    // doesn't read as "advanced" — see describeStatusChange().
     if (body.status && prior && prior.status !== body.status) {
-      const fromLabel = PUBLIC_STATUS_PHASES[prior.status]?.label ?? prior.status;
-      const toLabel = PUBLIC_STATUS_PHASES[body.status]?.label ?? body.status;
       await execute(
         `INSERT INTO search_activities (search_id, activity_type, description, performed_by, metadata)
          VALUES ($1, 'status_change', $2, 'system', $3::jsonb)`,
-        [id, `Search advanced: ${fromLabel} → ${toLabel}`, JSON.stringify({ from: prior.status, to: body.status })],
+        [id, describeStatusChange(prior.status, body.status), JSON.stringify({ from: prior.status, to: body.status })],
       );
     }
 
@@ -562,5 +593,39 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     }
 
     reply.send({ data: row });
+  });
+
+  // POST /api/v1/searches/:id/activities — Manual activity log (auth required)
+  // Closes the last roadmap stickiness item: 'client_meeting' is the only
+  // public-timeline activity that isn't a side effect of another endpoint, so
+  // Janet (or any API-keyed caller) needs an explicit write path to surface
+  // a forthcoming committee touchpoint before it happens. The same redaction
+  // discipline applies — descriptions go straight onto the public status page,
+  // so callers must keep them PII-free.
+  app.post('/api/v1/searches/:id/activities', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = activityCreateSchema.parse(request.body);
+
+    const exists = await queryOne<{ id: string }>(
+      `SELECT id FROM searches WHERE id = $1`,
+      [id],
+    );
+    if (!exists) return reply.code(404).send({ error: 'Search not found' });
+
+    const description = body.description ?? DEFAULT_ACTIVITY_DESCRIPTIONS[body.activity_type];
+    const row = await queryOne(
+      `INSERT INTO search_activities (search_id, activity_type, description, performed_by, related_person_id, metadata)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+       RETURNING *`,
+      [
+        id,
+        body.activity_type,
+        description,
+        body.performed_by ?? 'janet',
+        body.related_person_id ?? null,
+        body.metadata ? JSON.stringify(body.metadata) : null,
+      ],
+    );
+    reply.code(201).send({ data: row });
   });
 }

@@ -288,11 +288,26 @@
                 explainerEl.style.display = 'none';
             }
 
-            const pct = typeof d.progress_percent === 'number'
-                ? Math.max(4, d.progress_percent)
-                : (d.phase_total ? Math.max(4, Math.round((d.phase_step / d.phase_total) * 100)) : 0);
-            document.getElementById('progress-fill').style.width = pct + '%';
-            document.getElementById('progress-meta').textContent = 'Step ' + d.phase_step + ' of ' + d.phase_total;
+            // Non-progressing phases (on_hold, unknown) come back with
+            // phase_step === 0. Showing "Step 0 of 8" with a stub progress bar
+            // misleads — the search hasn't regressed, it's paused. Hide the
+            // bar/step counter and let the phase explainer + label carry the
+            // state instead.
+            const isProgressing = typeof d.phase_step === 'number' && d.phase_step > 0;
+            const trackEl = document.querySelector('.progress-track');
+            const progressMetaEl = document.getElementById('progress-meta');
+            if (isProgressing) {
+                const pct = typeof d.progress_percent === 'number'
+                    ? Math.max(4, d.progress_percent)
+                    : (d.phase_total ? Math.max(4, Math.round((d.phase_step / d.phase_total) * 100)) : 0);
+                document.getElementById('progress-fill').style.width = pct + '%';
+                progressMetaEl.textContent = 'Step ' + d.phase_step + ' of ' + d.phase_total;
+                if (trackEl) trackEl.style.display = '';
+                progressMetaEl.style.display = '';
+            } else {
+                if (trackEl) trackEl.style.display = 'none';
+                progressMetaEl.style.display = 'none';
+            }
 
             const nextEl = document.getElementById('next-milestone');
             if (d.next_milestone_label) {

@@ -1,7 +1,7 @@
 # CLAUDE.md — Knock Executive Search Platform
 
 > Complete system documentation for AI agents working on this codebase.
-> Last updated: 2026-05-06
+> Last updated: 2026-05-07
 
 ---
 
@@ -319,6 +319,7 @@ POST   /api/v1/searches/status            # Public client-facing status lookup (
 GET    /api/v1/searches/:id/candidates    # Candidate pipeline
 POST   /api/v1/searches/:id/candidates    # Add candidate
 PATCH  /api/v1/searches/:id/candidates/:cid # Update status
+POST   /api/v1/searches/:id/activities    # Manual activity log (auth required) — currently whitelisted to client_meeting; description surfaces verbatim on public status timeline
 
 # Matching
 POST   /api/v1/match/score               # Score one candidate vs search
@@ -642,28 +643,33 @@ The 10–16-week search engagement is the key window. Each touchpoint that gives
 - **Activity-type icons on the status timeline** — each timeline entry now carries a one-character glyph (`→ + ★ # ☎`) keyed to its `activity_type`, rendered in the Knock-gold marker on the left rail. Pure visual hierarchy — no API change — but it turns the timeline from a flat list into something the client can scan at a glance, reinforcing the live-dashboard feel introduced by v1.4 auto-refresh.
 - **Target-start countdown on status page** — when `target_start_date` is set on a search, the status page now suffixes the date with a context-aware countdown: `(~6 weeks away)`, `(28 days away)` (urgent ≤30d), `(today)`, or `(target passed)`. Gives clients a concrete reason to revisit as the target approaches — natural urgency layered on the existing v1.2 `target_start_date` field with no API changes.
 
+### Recently Shipped (2026-05-07)
+- **Direction-aware `status_change` descriptions** — the auto-logged status_change row in `PATCH /api/v1/searches/:id` previously always read "Search advanced: X → Y" regardless of direction. A pause now reads "Search paused: Sourcing → On hold", a cancellation reads "Search cancelled: …", a no-fill close reads "Search closed without placement: …", and a resume from `on_hold` reads "Search resumed: …". The verb selection lives in `describeStatusChange()` next to `PUBLIC_STATUS_PHASES` so future statuses can extend it in one place. Public-timeline copy quality directly affects how the status page reads on the days that matter most (a pause or cancellation is exactly when the client is paying attention) — the prior wording made bad news look like progress.
+- **`client_meeting` write-path: `POST /api/v1/searches/:id/activities`** — closes the last roadmap item under #5: every client-visible activity type now has a write surface. The endpoint requires API auth and intentionally whitelists only `client_meeting` (the one PUBLIC_ACTIVITY_TYPES entry that isn't a side effect of another endpoint), so it cannot become a backdoor for arbitrary activity rows. Defaults `description` to `'Client meeting scheduled'` and `performed_by` to `'janet'` for terse callers. Same redaction discipline as v1.3/v1.4/v1.5: the description string is what the public status page renders verbatim. Janet now has a single MCP-friendly call to surface a forthcoming committee touchpoint on the client's timeline before it happens.
+- **Status-page polish: paused phases stop showing "Step 0 of 8"** — `on_hold` and unknown statuses come back from the API with `phase_step === 0`. The previous render still drew a stub progress bar (clamped to 4%) and printed "Step 0 of 8", which read like a bug. The status page now hides the progress track and step counter when `phase_step === 0`, letting the phase label + explainer ("Search paused. Reach out to Janet…") carry the state on its own. Surgical UI fix that improves how the page reads in the exact moment a client is most likely to revisit (after a pause).
+
 ### Immediate Priority
 1. **Dan rates candidates** via /assess tool — until knock_rating is populated, matching can't distinguish quality
 2. **Alternative email pattern testing** — flast, firstlast for the 1,484 schools where first.last was rejected
 3. **Board member email enrichment** — once board emails exist, the board-segment newsletter lists will populate
 4. **Status-page email reminders** — when a search's status changes, send the client a one-line "your search just moved to X — see details at askknock.com/status?ref=…" email. Closes the loop on the new status surface. The intake response exposes a canonical `status_url` field — reuse that exact string in the email body so the link, the success screen, and the reminder all agree. **The auto-logged status_change row from v1.3 is the natural trigger** — a single new cron/listener can transform "new system-authored status_change activity" into an outbound email without any new business logic. The same trigger pattern now also fires for `candidate_added`, `presentation_sent`, and `interview_scheduled` — opening up "new candidate added to your pipeline" / "candidate just presented" / "committee interview scheduled" reminder emails as natural extensions. Pair the email with the status page's new "X new updates since you last checked" banner: clicking the email link arrives on a page that explicitly shows what's new since the last visit.
-5. **Last remaining client-visible activity type** — four of the five client-visible types (`status_change`, `candidate_added`, `presentation_sent`, `interview_scheduled`) are now auto-logged. Only `client_meeting` remains — it's not a candidate-status transition, so it needs a different trigger (likely a dedicated API write path or a small Janet skill that emits the row). It is the stickiest of the bunch (a concrete forthcoming touchpoint the client will see on the timeline) and should follow the v1.3/v1.4/v1.5 redaction discipline once the write path lands.
+5. **Janet skill emits `client_meeting`** — the API write-path landed (`POST /api/v1/searches/:id/activities`), so the remaining work is a small Janet skill that calls it whenever Dan or the committee schedules a touchpoint. Once that skill exists, every client-visible activity type self-populates the public status timeline end-to-end with no manual SQL. Pair with item #4: the same listener that sends "your search just moved to X" can fire a "client meeting scheduled for [date]" reminder off the new row.
 
 ### Short-term (Weeks)
-5. **Outreach automation** — Janet sends first-touch emails to candidates for active searches
-6. **Authenticated client portal v1** — extend status page with named-finalist cards, redacted committee notes, and a place for the client to leave reactions (graduated from the email-verified status lookup)
-7. **LLM enrichment at scale** — Increase batch sizes, add cost tracking
+6. **Outreach automation** — Janet sends first-touch emails to candidates for active searches
+7. **Authenticated client portal v1** — extend status page with named-finalist cards, redacted committee notes, and a place for the client to leave reactions (graduated from the email-verified status lookup)
+8. **LLM enrichment at scale** — Increase batch sizes, add cost tracking
 
 ### Medium-term (Months)
-8. **LinkedIn integration** — Automated profile monitoring for career changes
-9. **CRM features** — Full client relationship management
-10. **Billing integration** — Invoice generation via Stripe or similar
-11. **Multi-consultant** — Support for multiple search consultants beyond Dan
+9.  **LinkedIn integration** — Automated profile monitoring for career changes
+10. **CRM features** — Full client relationship management
+11. **Billing integration** — Invoice generation via Stripe or similar
+12. **Multi-consultant** — Support for multiple search consultants beyond Dan
 
 ### Long-term
-12. **Predictive transition model** — ML-based HOS transition prediction from signals
-13. **Candidate self-service** — Candidates can update their own profiles
-14. **Market analytics** — Public-facing industry reports to drive inbound
+13. **Predictive transition model** — ML-based HOS transition prediction from signals
+14. **Candidate self-service** — Candidates can update their own profiles
+15. **Market analytics** — Public-facing industry reports to drive inbound
 
 ---
 
