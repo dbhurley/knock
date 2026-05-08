@@ -157,6 +157,13 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
   app.post('/api/v1/searches/status', async (request, reply) => {
     const body = publicStatusSchema.parse(request.body);
 
+    // Pipeline counts are computed live from search_candidates rather than
+    // read off the searches.candidates_* columns. Two reasons: (a) only
+    // candidates_identified is currently kept in sync (POST /candidates writes
+    // it back), so candidates_presented/candidates_interviewed would otherwise
+    // sit at 0 forever on the one surface clients actually see; (b) a single
+    // FILTER subquery is cheap and atomic, so the three numbers are always
+    // mutually consistent with each other and with the redacted timeline above.
     const row = await queryOne<{
       search_number: string;
       position_title: string;
@@ -164,16 +171,25 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       status_changed_at: string;
       created_at: string;
       target_start_date: string | null;
+      search_urgency: string | null;
       candidates_identified: number;
       candidates_presented: number;
+      candidates_interviewing: number;
       school_name: string | null;
       school_city: string | null;
       school_state: string | null;
       client_contact_email: string | null;
     }>(
       `SELECT s.search_number, s.position_title, s.status, s.status_changed_at,
-              s.created_at, s.target_start_date,
-              s.candidates_identified, s.candidates_presented,
+              s.created_at, s.target_start_date, s.search_urgency,
+              (SELECT COUNT(*) FROM search_candidates WHERE search_id = s.id)::int
+                AS candidates_identified,
+              (SELECT COUNT(*) FROM search_candidates
+                 WHERE search_id = s.id AND presented_at IS NOT NULL)::int
+                AS candidates_presented,
+              (SELECT COUNT(*) FROM search_candidates
+                 WHERE search_id = s.id AND status = 'interviewing')::int
+                AS candidates_interviewing,
               sch.name AS school_name, sch.city AS school_city, sch.state AS school_state,
               s.client_contact_email
        FROM searches s
@@ -261,6 +277,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         target_start_date: row.target_start_date,
         candidates_identified: row.candidates_identified ?? 0,
         candidates_presented: row.candidates_presented ?? 0,
+        candidates_interviewing: row.candidates_interviewing ?? 0,
+        search_urgency: row.search_urgency ?? null,
         last_activity_at: latest?.created_at ?? null,
         last_activity_summary: latest?.description ?? null,
         recent_activities: activities.map((a) => ({

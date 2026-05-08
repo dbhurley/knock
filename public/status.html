@@ -50,10 +50,18 @@
         .progress-fill { height: 100%; background: linear-gradient(90deg, #b8860b, #d4a017); border-radius: 3px; transition: width 0.4s ease; }
         .progress-meta { font-size: 0.78rem; color: #888; }
 
-        .pipeline { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1.2rem; }
+        .pipeline { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem; margin-top: 1.2rem; }
+        @media (max-width: 520px) { .pipeline { grid-template-columns: 1fr 1fr; } .pipeline .stat:nth-child(3) { grid-column: span 2; } }
         .pipeline .stat { background: #faf6ee; border: 1px solid #f0e6d0; border-radius: 6px; padding: 0.9rem 1rem; }
         .pipeline .stat .num { font-size: 1.6rem; font-weight: 700; color: #b8860b; line-height: 1; }
-        .pipeline .stat .lbl { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-top: 0.4rem; font-weight: 600; }
+        .pipeline .stat .lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-top: 0.4rem; font-weight: 600; }
+
+        .urgency-badge { display: inline-block; margin-left: 0.6rem; vertical-align: 2px; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; font-weight: 700; padding: 0.2rem 0.55rem; border-radius: 999px; border: 1px solid; }
+        .urgency-badge.immediate { background: #fdecea; border-color: #f5b7b1; color: #b8530b; }
+        .urgency-badge.standard  { background: #faf6ee; border-color: #f0e6d0; color: #b8860b; }
+        .urgency-badge.flexible  { background: #f4f4f0; border-color: #e0e0d8; color: #777; }
+
+        .activity-card .label .icon-glyph { display: inline-block; width: 18px; height: 18px; margin-right: 0.45rem; border-radius: 50%; background: #b8860b; color: #fff; font-size: 0.62rem; font-weight: 700; line-height: 18px; text-align: center; vertical-align: -3px; }
 
         .meta-row { display: flex; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; border-top: 1px solid #f5f0e8; font-size: 0.85rem; }
         .meta-row:first-of-type { border-top: none; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid #eee; }
@@ -136,6 +144,7 @@
                 <h2 id="position-title"></h2>
                 <div class="school" id="school-name"></div>
                 <div class="ref-num" id="ref-num"></div>
+                <span class="urgency-badge" id="urgency-badge" style="display:none"></span>
 
                 <div class="phase-tracker">
                     <div class="phase-current">Current phase</div>
@@ -155,6 +164,10 @@
                         <div class="num" id="num-presented">0</div>
                         <div class="lbl">Presented to committee</div>
                     </div>
+                    <div class="stat">
+                        <div class="num" id="num-interviewing">0</div>
+                        <div class="lbl">Currently interviewing</div>
+                    </div>
                 </div>
 
                 <div class="next-milestone" id="next-milestone" style="display:none">
@@ -172,7 +185,7 @@
             </div>
 
             <div class="activity-card" id="activity-card">
-                <div class="label">Latest update</div>
+                <div class="label"><span class="icon-glyph" id="activity-icon" style="display:none"></span>Latest update</div>
                 <div class="summary" id="activity-summary"></div>
                 <div class="when" id="activity-when"></div>
                 <ul class="timeline" id="activity-timeline" style="display:none"></ul>
@@ -330,6 +343,24 @@
 
             document.getElementById('num-identified').textContent = d.candidates_identified;
             document.getElementById('num-presented').textContent = d.candidates_presented;
+            document.getElementById('num-interviewing').textContent = d.candidates_interviewing ?? 0;
+
+            // Urgency badge — sets honest pacing expectations from the moment
+            // the page loads. The label tracks intake's three-value enum so
+            // 'immediate' clients understand why Janet might check in more
+            // often, and 'flexible' clients aren't surprised by a longer slate.
+            const urgencyEl = document.getElementById('urgency-badge');
+            urgencyEl.className = 'urgency-badge';
+            if (d.search_urgency === 'immediate' || d.search_urgency === 'standard' || d.search_urgency === 'flexible') {
+                urgencyEl.classList.add(d.search_urgency);
+                urgencyEl.textContent = d.search_urgency === 'immediate'
+                    ? 'Immediate'
+                    : (d.search_urgency === 'flexible' ? 'Flexible timing' : 'Standard pace');
+                urgencyEl.style.display = 'inline-block';
+            } else {
+                urgencyEl.style.display = 'none';
+            }
+
             document.getElementById('opened-at').textContent = fmtDate(d.opened_at);
             document.getElementById('updated-at').textContent = fmtDate(d.status_changed_at);
             const countdownEl = document.getElementById('target-countdown');
@@ -344,7 +375,11 @@
                 const days = Math.round((new Date(d.target_start_date).getTime() - Date.now()) / 86_400_000);
                 if (!isNaN(days)) {
                     if (days < 0) {
-                        countdownEl.textContent = '(target passed)';
+                        // Honest urgency rather than a dismissive "(target passed)":
+                        // a search running past its target is exactly when the
+                        // client wants concrete numbers, not a vague flag.
+                        const past = Math.abs(days);
+                        countdownEl.textContent = '(' + past + ' day' + (past === 1 ? '' : 's') + ' past target)';
                         countdownEl.classList.add('past');
                     } else if (days === 0) {
                         countdownEl.textContent = '(today)';
@@ -391,6 +426,18 @@
             if (d.last_activity_summary) {
                 document.getElementById('activity-summary').textContent = d.last_activity_summary;
                 document.getElementById('activity-when').textContent = fmtRelative(d.last_activity_at);
+                // Headline card carries the same activity-type glyph as the
+                // timeline rows below it — small touch, but the visual rhythm
+                // breaks if the headline is the only entry without one.
+                const iconEl = document.getElementById('activity-icon');
+                const headlineType = (acts[0] && acts[0].activity_type) || null;
+                const glyph = headlineType ? ACTIVITY_ICONS[headlineType] : null;
+                if (glyph) {
+                    iconEl.textContent = glyph;
+                    iconEl.style.display = 'inline-block';
+                } else {
+                    iconEl.style.display = 'none';
+                }
                 actCard.classList.add('show');
                 actCard.classList.toggle(
                     'is-new',
