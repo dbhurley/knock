@@ -76,6 +76,24 @@ describe('POST /api/v1/searches/status', () => {
     }
   });
 
+  it('does not leak activity_count_last_7d on 404 (negative paths return no data)', async () => {
+    // The proof-of-life velocity field must only appear on the verified
+    // success shape, alongside other personalized fields. A 404 must not
+    // expose any signal about whether/how active a search has been.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-998',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('data' in body), 'must not include data on 404');
+    assert.ok(!('activity_count_last_7d' in body), 'velocity field must not leak on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".

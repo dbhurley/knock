@@ -6,6 +6,14 @@
     <title>Search Status | Knock Executive Search</title>
     <meta name="description" content="Check the status of your Knock executive search. Enter your reference number and contact email to see your search's current phase and pipeline progress.">
     <meta name="robots" content="noindex">
+    <link rel="icon" href="/knock-logo.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="/knock-logo.png">
+    <meta name="theme-color" content="#b8860b">
+    <meta property="og:title" content="Search Status | Knock Executive Search">
+    <meta property="og:description" content="Live progress on your Knock executive search. Pin this tab — it updates as the pipeline moves.">
+    <meta property="og:type" content="website">
+    <meta property="og:image" content="https://askknock.com/knock-logo.png">
+    <meta name="twitter:card" content="summary">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafaf8; color: #1a1a1a; }
@@ -98,6 +106,14 @@
 
         .phase-pacing { font-size: 0.78rem; color: #888; margin-top: 0.3rem; }
 
+        .relative-age { color: #999; font-weight: 400; margin-left: 0.4rem; font-size: 0.82rem; }
+        .velocity-summary.warm { color: #b8860b; font-weight: 600; }
+        .velocity-summary.quiet { color: #888; }
+
+        .empty-state-card { background: #faf6ee; border: 1px dashed #f0e6d0; border-radius: 8px; padding: 1.1rem 1.3rem; margin-bottom: 1rem; display: none; font-size: 0.88rem; color: #6a5b1f; line-height: 1.55; }
+        .empty-state-card.show { display: block; }
+        .empty-state-card strong { color: #b8860b; }
+
         .refresh-btn {
             display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; margin-top: 1rem;
             background: transparent; color: #b8860b; border: 1.5px solid #f0e6d0; border-radius: 6px;
@@ -174,8 +190,9 @@
                     <span class="arrow">→</span> Next: <span id="next-milestone-label"></span>
                 </div>
 
-                <div class="meta-row"><span class="k">Search opened</span><span class="v" id="opened-at"></span></div>
+                <div class="meta-row"><span class="k">Search opened</span><span class="v"><span id="opened-at"></span><span class="relative-age" id="opened-at-relative"></span></span></div>
                 <div class="meta-row"><span class="k">Last updated</span><span class="v" id="updated-at"></span></div>
+                <div class="meta-row" id="velocity-row" style="display:none"><span class="k">Activity</span><span class="v" id="velocity-summary"></span></div>
                 <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v"><span id="target-start"></span><span class="countdown" id="target-countdown"></span></span></div>
 
                 <button type="button" class="refresh-btn" id="refresh-btn" title="Re-check status">
@@ -183,6 +200,8 @@
                 </button>
                 <span class="auto-refresh-hint" id="auto-refresh-hint">Auto-refreshes every 3 min while this tab is open</span>
             </div>
+
+            <div class="empty-state-card" id="empty-state-card"></div>
 
             <div class="activity-card" id="activity-card">
                 <div class="label"><span class="icon-glyph" id="activity-icon" style="display:none"></span>Latest update</div>
@@ -362,7 +381,40 @@
             }
 
             document.getElementById('opened-at').textContent = fmtDate(d.opened_at);
+            // Relative age on the open date — concrete sense of how long the
+            // engagement has been running without forcing the client to do
+            // calendar math. Hidden when the open date is missing or invalid.
+            const openedRelEl = document.getElementById('opened-at-relative');
+            if (d.opened_at) {
+                const ageDays = Math.floor((Date.now() - new Date(d.opened_at).getTime()) / 86_400_000);
+                if (!isNaN(ageDays) && ageDays >= 0) {
+                    openedRelEl.textContent = ageDays === 0
+                        ? '(today)'
+                        : '(' + ageDays + ' day' + (ageDays === 1 ? '' : 's') + ' ago)';
+                } else {
+                    openedRelEl.textContent = '';
+                }
+            } else {
+                openedRelEl.textContent = '';
+            }
             document.getElementById('updated-at').textContent = fmtDate(d.status_changed_at);
+
+            // Activity-velocity row — concrete proof that the pipeline is alive.
+            // Warm tone when there's activity, muted when quiet. Hidden entirely
+            // when the field is missing (older API versions), so the page degrades
+            // gracefully if rolled back ahead of the API.
+            const velocityRow = document.getElementById('velocity-row');
+            const velocitySummary = document.getElementById('velocity-summary');
+            if (typeof d.activity_count_last_7d === 'number') {
+                const n = d.activity_count_last_7d;
+                velocitySummary.className = 'v velocity-summary ' + (n > 0 ? 'warm' : 'quiet');
+                velocitySummary.textContent = n === 0
+                    ? 'Quiet stretch — no updates this week'
+                    : n + ' update' + (n === 1 ? '' : 's') + ' this week';
+                velocityRow.style.display = 'flex';
+            } else {
+                velocityRow.style.display = 'none';
+            }
             const countdownEl = document.getElementById('target-countdown');
             countdownEl.className = 'countdown';
             countdownEl.textContent = '';
@@ -479,6 +531,24 @@
             } else {
                 actCard.classList.remove('show');
                 timelineEl.style.display = 'none';
+            }
+
+            // Friendly empty-state for brand-new searches with no public-visible
+            // activity yet (typically intake/scoping). Without this, day-1 status
+            // checks land on a page that visibly omits an "updates" panel — which
+            // can read as "nothing's happening." A small explainer card sets the
+            // expectation that activity logs will populate as the search moves,
+            // turning the first visit into the start of a habit instead of a dead
+            // end. Hidden the moment the timeline has any entries.
+            const emptyEl = document.getElementById('empty-state-card');
+            if (!d.last_activity_summary && (!acts || acts.length === 0)) {
+                const earlyPhase = (d.status === 'intake' || d.status === 'scoping');
+                emptyEl.innerHTML = earlyPhase
+                    ? "<strong>Janet just got your search.</strong> Activity logs typically begin appearing within 24&ndash;48 hours as scoping kicks off. Pin this tab and check back &mdash; each move on the pipeline shows up here automatically."
+                    : "<strong>No client-visible updates yet.</strong> Janet's working in the background and will surface activity here as the pipeline moves.";
+                emptyEl.classList.add('show');
+            } else {
+                emptyEl.classList.remove('show');
             }
 
             // Stamp the high-water mark to the newest activity's timestamp so

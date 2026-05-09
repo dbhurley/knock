@@ -243,6 +243,22 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
 
     const latest = activities[0] ?? null;
 
+    // 7-day public-activity count — concrete proof-of-life on the status page.
+    // The page renders this as "5 updates this week" / "Quiet stretch — no
+    // updates this week", which gives clients a real reason to feel the
+    // pipeline is alive (or to prompt a check-in if it isn't). Filtered to
+    // PUBLIC_ACTIVITY_TYPES to match what's already visible in recent_activities,
+    // so the number can never include internal/commercial rows.
+    const velocityRow = await queryOne<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM search_activities
+       WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
+         AND activity_type = ANY($2::text[])
+         AND created_at >= NOW() - INTERVAL '7 days'`,
+      [row.search_number, activityTypes],
+    );
+    const activityCountLast7d = parseInt(velocityRow?.count ?? '0', 10);
+
     // Time spent in the current phase — a simple, honest pacing signal.
     // Only computed when status_changed_at is populated and the search is
     // still in a progressing phase (terminal/non-progressing → null).
@@ -281,6 +297,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         search_urgency: row.search_urgency ?? null,
         last_activity_at: latest?.created_at ?? null,
         last_activity_summary: latest?.description ?? null,
+        activity_count_last_7d: activityCountLast7d,
         recent_activities: activities.map((a) => ({
           activity_type: a.activity_type,
           description: a.description,
