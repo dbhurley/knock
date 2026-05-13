@@ -94,6 +94,26 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('activity_count_last_7d' in body), 'velocity field must not leak on 404');
   });
 
+  it('does not leak is_stalled or phase_explainer on 404 (no pacing/state hints to anonymous callers)', async () => {
+    // is_stalled is a derived pacing signal; phase_explainer is the API's
+    // canonical phase-copy. Both belong only on the verified success shape.
+    // A 404 must remain a flat error envelope so an anonymous caller cannot
+    // infer anything about a search's tempo or current phase from the response.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-997',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('is_stalled' in body), 'stall flag must not leak on 404');
+    assert.ok(!('phase_explainer' in body), 'phase explainer must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".

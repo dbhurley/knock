@@ -114,15 +114,29 @@
         .empty-state-card.show { display: block; }
         .empty-state-card strong { color: #b8860b; }
 
-        .refresh-btn {
+        .refresh-btn, .share-btn {
             display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; margin-top: 1rem;
             background: transparent; color: #b8860b; border: 1.5px solid #f0e6d0; border-radius: 6px;
             font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
         }
-        .refresh-btn:hover { background: #faf6ee; border-color: #b8860b; }
-        .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .refresh-btn:hover, .share-btn:hover { background: #faf6ee; border-color: #b8860b; }
+        .refresh-btn:disabled, .share-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .share-btn { margin-left: 0.4rem; }
+        .share-btn.copied { background: #faf6ee; border-color: #b8860b; }
 
         .auto-refresh-hint { font-size: 0.72rem; color: #aaa; margin-top: 0.4rem; display: inline-block; }
+
+        .velocity-summary.stalled { color: #b8530b; font-weight: 600; }
+
+        @media print {
+            header, footer, .refresh-btn, .share-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card { display: none !important; }
+            body { background: #fff; }
+            main { max-width: 100%; padding: 1rem; }
+            .status-card, .activity-card { border: 1px solid #ccc; box-shadow: none; page-break-inside: avoid; }
+            .timeline li { page-break-inside: avoid; }
+            a { color: inherit; text-decoration: none; }
+            h1 { font-size: 1.2rem; }
+        }
 
         .help { font-size: 0.85rem; color: #666; line-height: 1.6; margin-top: 1.5rem; }
         .help a { color: #b8860b; text-decoration: none; }
@@ -197,6 +211,9 @@
 
                 <button type="button" class="refresh-btn" id="refresh-btn" title="Re-check status">
                     <span>&#x21bb;</span> Refresh
+                </button>
+                <button type="button" class="share-btn" id="share-btn" title="Copy a link to this status page">
+                    <span>&#x2398;</span> <span id="share-btn-label">Share link</span>
                 </button>
                 <span class="auto-refresh-hint" id="auto-refresh-hint">Auto-refreshes every 3 min while this tab is open</span>
             </div>
@@ -312,7 +329,13 @@
             }
 
             const explainerEl = document.getElementById('phase-explainer');
-            const explainer = PHASE_EXPLAINERS[d.status];
+            // Prefer the API-supplied explainer (single source of truth for the
+            // status page, future email reminders, and any PDF export) and fall
+            // back to the local map so the page still renders if the API is
+            // rolled back ahead of the frontend.
+            const explainer = (typeof d.phase_explainer === 'string' && d.phase_explainer)
+                ? d.phase_explainer
+                : PHASE_EXPLAINERS[d.status];
             if (explainer) {
                 explainerEl.textContent = explainer;
                 explainerEl.style.display = 'block';
@@ -400,17 +423,28 @@
             document.getElementById('updated-at').textContent = fmtDate(d.status_changed_at);
 
             // Activity-velocity row — concrete proof that the pipeline is alive.
-            // Warm tone when there's activity, muted when quiet. Hidden entirely
-            // when the field is missing (older API versions), so the page degrades
-            // gracefully if rolled back ahead of the API.
+            // Warm tone when there's activity, muted when quiet. When the API
+            // flags a stall (no public activity in a week AND ≥14 days in
+            // current phase), swap the muted "quiet stretch" message for a
+            // concrete prompt that gives the client an obvious next step
+            // ("reply to Janet"). Hidden entirely when the field is missing
+            // (older API versions), so the page degrades gracefully if rolled
+            // back ahead of the API.
             const velocityRow = document.getElementById('velocity-row');
             const velocitySummary = document.getElementById('velocity-summary');
             if (typeof d.activity_count_last_7d === 'number') {
                 const n = d.activity_count_last_7d;
-                velocitySummary.className = 'v velocity-summary ' + (n > 0 ? 'warm' : 'quiet');
-                velocitySummary.textContent = n === 0
-                    ? 'Quiet stretch — no updates this week'
-                    : n + ' update' + (n === 1 ? '' : 's') + ' this week';
+                if (d.is_stalled === true) {
+                    velocitySummary.className = 'v velocity-summary stalled';
+                    velocitySummary.textContent = typeof d.days_in_phase === 'number'
+                        ? 'Quiet for ' + d.days_in_phase + ' days — reply to Janet if you’d like a check-in'
+                        : 'Quiet stretch — reply to Janet if you’d like a check-in';
+                } else {
+                    velocitySummary.className = 'v velocity-summary ' + (n > 0 ? 'warm' : 'quiet');
+                    velocitySummary.textContent = n === 0
+                        ? 'Quiet stretch — no updates this week'
+                        : n + ' update' + (n === 1 ? '' : 's') + ' this week';
+                }
                 velocityRow.style.display = 'flex';
             } else {
                 velocityRow.style.display = 'none';
@@ -625,6 +659,40 @@
 
             btn.disabled = false;
             btn.textContent = 'Check Status';
+        });
+
+        // Share button — copies a deep-linked URL (?ref=KNK-…) so the client
+        // can forward their status page to a board chair or search committee
+        // member in one tap. Each share is a new return-visitor surface, and
+        // the recipient still has to supply the matching contact email to see
+        // anything (the link itself is harmless if leaked). Uses the native
+        // Web Share API on mobile when available, falls back to clipboard.
+        const shareBtn = document.getElementById('share-btn');
+        const shareBtnLabel = document.getElementById('share-btn-label');
+        shareBtn.addEventListener('click', async function() {
+            const ref = refreshBtn.dataset.ref;
+            if (!ref) return;
+            const url = location.origin + '/status?ref=' + encodeURIComponent(ref);
+            const title = ref + ' · Knock Executive Search';
+            try {
+                if (navigator.share) {
+                    await navigator.share({ title: title, url: url });
+                    return;
+                }
+            } catch (_) { /* user cancelled share sheet — fall through to copy */ }
+            try {
+                await navigator.clipboard.writeText(url);
+                shareBtn.classList.add('copied');
+                shareBtnLabel.textContent = 'Link copied';
+                setTimeout(function() {
+                    shareBtn.classList.remove('copied');
+                    shareBtnLabel.textContent = 'Share link';
+                }, 2000);
+            } catch (_) {
+                // No clipboard API (very old browser). Surface the URL so the
+                // user can at least copy by hand.
+                window.prompt('Copy this link to share the status page:', url);
+            }
         });
 
         refreshBtn.addEventListener('click', async function() {

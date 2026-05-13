@@ -113,6 +113,35 @@ const PUBLIC_STATUS_PHASES: Record<string, { label: string; step: number }> = {
   on_hold:       { label: 'On hold',                 step: 0 },
 };
 
+// Plain-English explainer per phase. Lives in the API (not just the status
+// page's frontend map) so the same copy can render in future surfaces — the
+// status-change reminder email cron from roadmap #4 needs identical wording,
+// and so will the eventual PDF status reports. One source of truth means a
+// future copy edit doesn't have to chase three duplicates.
+const PUBLIC_STATUS_EXPLAINERS: Record<string, string> = {
+  intake:            'Janet is reviewing your intake and will confirm scope before kicking off.',
+  scoping:           'Aligning on the search profile, committee process, and timeline before sourcing begins.',
+  sourcing:          "Actively researching candidates against your school's profile — most slates take 2–4 weeks to assemble.",
+  screening:         'Speaking with prospective candidates to gauge fit, motivation, and availability.',
+  presenting:        'Preparing a curated slate of finalists for committee review.',
+  client_interviews: 'Committee is meeting with finalists. Janet is collecting feedback after each round.',
+  offer:             'Finalist selected. Negotiating offer terms, references, and start date.',
+  placed:            "Placement complete. Janet stays in touch through the candidate's first 90 days.",
+  closed_no_fill:    "Search closed without a placement. Reach out if you'd like to debrief or restart.",
+  cancelled:         "Search cancelled at the school's request.",
+  on_hold:           "Search paused. Reach out to Janet when you're ready to resume.",
+};
+
+// A progressing search is "stalled" when the public-visible timeline has been
+// quiet for a full week *and* the current phase has dragged for two weeks.
+// Both thresholds matter: a fresh phase shouldn't trigger the flag just
+// because no activities have happened yet, and an active phase with recent
+// chatter shouldn't trigger it just because it's been the current phase a while.
+// Terminal/non-progressing states (placed, closed_no_fill, cancelled, on_hold)
+// are never stalled — their lack of activity is the expected end-state.
+const STALL_QUIET_DAYS = 7;
+const STALL_PHASE_DAYS = 14;
+
 // Forward order of progressing phases — used to compute the "next milestone"
 // label clients see on the status page. Terminal/non-progressing states
 // (placed, closed_no_fill, cancelled, on_hold) intentionally have no next.
@@ -270,6 +299,18 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Honest stall signal: progressing phase, no public activity in a week,
+    // and the same phase has been the current phase for two-plus weeks. The
+    // status page uses this to soften "Quiet stretch" into a concrete prompt
+    // for the client to nudge Janet. Pre-paves the email-reminder cron from
+    // roadmap #4 (a "your search has gone quiet — want a check-in?" message
+    // is exactly what should fire when this trips).
+    const isStalled = PUBLIC_STATUS_FORWARD.includes(row.status)
+      && row.status !== 'placed'
+      && activityCountLast7d === 0
+      && typeof daysInPhase === 'number'
+      && daysInPhase >= STALL_PHASE_DAYS;
+
     // Personalized client data — never cache in shared/CDN/browser caches.
     // The endpoint is auth-exempt by ref+email, so a leaked cache entry could
     // reveal a search's progress to anyone who later hits the same URL.
@@ -283,12 +324,14 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         school_location: [row.school_city, row.school_state].filter(Boolean).join(', ') || null,
         status: row.status,
         phase_label: phase.label,
+        phase_explainer: PUBLIC_STATUS_EXPLAINERS[row.status] ?? null,
         phase_step: phase.step,
         phase_total: 8,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
         status_changed_at: row.status_changed_at,
         days_in_phase: daysInPhase,
+        is_stalled: isStalled,
         opened_at: row.created_at,
         target_start_date: row.target_start_date,
         candidates_identified: row.candidates_identified ?? 0,
