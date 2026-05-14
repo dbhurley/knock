@@ -51,10 +51,12 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok([400, 500].includes(res.status), `expected 400/500, got ${res.status}`);
   });
 
-  it('emits a no-store, private Cache-Control header (no shared caching of personalized data)', async () => {
+  it('emits a no-store, private Cache-Control header on every response shape (including 404)', async () => {
     // Personalized content must never be stored by shared caches/CDNs/browsers.
-    // This is a privacy property of the endpoint, so we assert it on every
-    // response shape — including 404 — to keep the contract simple.
+    // The header is set unconditionally at the start of the handler so the
+    // privacy contract is uniform: a leaked cache entry on *any* response
+    // shape could disclose the verified/unverified status of a (ref, email)
+    // pair, so the 404 path needs the same protection as the 200 path.
     const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -64,16 +66,9 @@ describe('POST /api/v1/searches/status', () => {
       }),
     });
     const cc = res.headers.get('cache-control') ?? '';
-    if (res.status === 200) {
-      assert.match(cc, /no-store/, 'expected Cache-Control: no-store on success path');
-      assert.match(cc, /private/, 'expected Cache-Control: private on success path');
-    }
-    // Non-200 (404 in this test) is allowed to omit the header — only the
-    // success path returns sensitive data — but if it's present it must be
-    // restrictive, not permissive.
-    if (cc) {
-      assert.ok(!/public/.test(cc), 'Cache-Control must never be public');
-    }
+    assert.match(cc, /no-store/, 'expected Cache-Control: no-store on every path');
+    assert.match(cc, /private/, 'expected Cache-Control: private on every path');
+    assert.ok(!/public/.test(cc), 'Cache-Control must never be public');
   });
 
   it('does not leak activity_count_last_7d on 404 (negative paths return no data)', async () => {
@@ -111,6 +106,26 @@ describe('POST /api/v1/searches/status', () => {
     const body = await res.json();
     assert.ok(!('is_stalled' in body), 'stall flag must not leak on 404');
     assert.ok(!('phase_explainer' in body), 'phase explainer must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
+  it('does not leak phase_duration_typical on 404 (no pacing benchmarks to anonymous callers)', async () => {
+    // phase_duration_typical is the API's canonical typical-duration map for
+    // the current phase. It must only appear on the verified success shape —
+    // otherwise an anonymous caller could infer the current phase of an
+    // arbitrary search from the response's min_days/max_days pair (different
+    // phases have distinct ranges).
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-996',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('phase_duration_typical' in body), 'typical-duration map must not leak on 404');
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 

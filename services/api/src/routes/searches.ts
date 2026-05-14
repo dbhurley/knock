@@ -142,6 +142,23 @@ const PUBLIC_STATUS_EXPLAINERS: Record<string, string> = {
 const STALL_QUIET_DAYS = 7;
 const STALL_PHASE_DAYS = 14;
 
+// Typical duration (in days) for each progressing phase. Drawn from the same
+// pacing the explainer copy already commits to ("most slates take 2–4 weeks
+// to assemble" → sourcing: 14–28). Surfacing this alongside `days_in_phase`
+// turns the pacing line from "you've been here 18 days" (anchorless) into
+// "18 days in phase (typically 14–28)" — concrete, honest pacing that lets
+// the client self-anchor without exposing pipeline internals. Terminal /
+// non-progressing phases intentionally have no typical duration.
+const PUBLIC_STATUS_TYPICAL_DURATION: Record<string, { min_days: number; max_days: number }> = {
+  intake:            { min_days: 1,  max_days: 5  },
+  scoping:           { min_days: 5,  max_days: 14 },
+  sourcing:          { min_days: 14, max_days: 28 },
+  screening:         { min_days: 10, max_days: 21 },
+  presenting:        { min_days: 3,  max_days: 10 },
+  client_interviews: { min_days: 14, max_days: 28 },
+  offer:             { min_days: 5,  max_days: 14 },
+};
+
 // Forward order of progressing phases — used to compute the "next milestone"
 // label clients see on the status page. Terminal/non-progressing states
 // (placed, closed_no_fill, cancelled, on_hold) intentionally have no next.
@@ -185,6 +202,12 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
   // don't disclose whether a search exists.
   app.post('/api/v1/searches/status', async (request, reply) => {
     const body = publicStatusSchema.parse(request.body);
+
+    // Personalized client data — never cache in shared/CDN/browser caches,
+    // including on the 404 path. Setting the header up front keeps the
+    // privacy contract uniform: a leaked cache entry on *any* response shape
+    // could disclose the verified/unverified status of a (ref, email) pair.
+    reply.header('Cache-Control', 'no-store, private');
 
     // Pipeline counts are computed live from search_candidates rather than
     // read off the searches.candidates_* columns. Two reasons: (a) only
@@ -311,11 +334,6 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       && typeof daysInPhase === 'number'
       && daysInPhase >= STALL_PHASE_DAYS;
 
-    // Personalized client data — never cache in shared/CDN/browser caches.
-    // The endpoint is auth-exempt by ref+email, so a leaked cache entry could
-    // reveal a search's progress to anyone who later hits the same URL.
-    reply.header('Cache-Control', 'no-store, private');
-
     reply.send({
       data: {
         search_number: row.search_number,
@@ -331,6 +349,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         next_milestone_label: nextMilestoneLabel,
         status_changed_at: row.status_changed_at,
         days_in_phase: daysInPhase,
+        phase_duration_typical: PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null,
         is_stalled: isStalled,
         opened_at: row.created_at,
         target_start_date: row.target_start_date,

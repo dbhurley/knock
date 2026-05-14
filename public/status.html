@@ -375,9 +375,23 @@
             const pacingEl = document.getElementById('phase-pacing');
             if (typeof d.days_in_phase === 'number') {
                 const dip = d.days_in_phase;
-                pacingEl.textContent = dip === 0
+                let line = dip === 0
                     ? 'In this phase since today'
                     : 'In this phase for ' + dip + ' day' + (dip === 1 ? '' : 's');
+                // Append the API-supplied typical range so the number above
+                // has a benchmark to anchor against. Without this, "18 days in
+                // phase" reads as anchorless ("is that good or bad?"). With it,
+                // "18 days in phase (typically 14–28 days)" sets honest pacing
+                // expectations and gives the client a concrete reason to
+                // revisit as the range is approached or exceeded.
+                if (d.phase_duration_typical &&
+                    typeof d.phase_duration_typical.min_days === 'number' &&
+                    typeof d.phase_duration_typical.max_days === 'number') {
+                    const min = d.phase_duration_typical.min_days;
+                    const max = d.phase_duration_typical.max_days;
+                    line += ' (typically ' + min + '–' + max + ' days)';
+                }
+                pacingEl.textContent = line;
                 pacingEl.style.display = 'block';
             } else {
                 pacingEl.style.display = 'none';
@@ -452,7 +466,15 @@
             const countdownEl = document.getElementById('target-countdown');
             countdownEl.className = 'countdown';
             countdownEl.textContent = '';
-            if (d.target_start_date) {
+            // Terminal phases: placed, cancelled, closed_no_fill. Once the
+            // search has reached a terminal state, the target-start countdown
+            // is meaningless and reads slightly punitive ("4 days past target"
+            // on a successful placement). Suppress the entire target row in
+            // those cases so the page reads cleanly on the days that matter
+            // most (right after a placement, cancellation, or close).
+            const TERMINAL_PHASES = ['placed', 'cancelled', 'closed_no_fill'];
+            const isTerminal = TERMINAL_PHASES.indexOf(d.status) !== -1;
+            if (d.target_start_date && !isTerminal) {
                 document.getElementById('target-start').textContent = fmtDate(d.target_start_date);
                 document.getElementById('target-row').style.display = 'flex';
                 // Surface a weeks-remaining countdown so the target date isn't
