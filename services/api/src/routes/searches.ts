@@ -167,6 +167,48 @@ const PUBLIC_STATUS_FORWARD: string[] = [
   'presenting', 'client_interviews', 'offer', 'placed',
 ];
 
+// Sum the typical duration of the remaining progressing phases (including the
+// unused portion of the current phase) to produce a concrete completion-window
+// range the client can mark on a calendar. Compounding stickiness primitive:
+// every visit shows two dates, the dates stay stable across visits so the
+// client builds an anchor, and as `days_in_phase` rises past the typical-max
+// the upper bound walks forward — giving the same client a fresh reason to
+// revisit when the window is about to slip. Returns null for terminal /
+// non-progressing states (placed, cancelled, closed_no_fill, on_hold) where
+// a forward-looking estimate is either meaningless or misleading.
+function computeCompletionWindow(
+  currentStatus: string,
+  daysInPhase: number | null,
+): { earliest: string; latest: string } | null {
+  const idx = PUBLIC_STATUS_FORWARD.indexOf(currentStatus);
+  // Skip terminal/unknown statuses (and `placed`, which is already done).
+  if (idx < 0 || currentStatus === 'placed') return null;
+  const remaining = PUBLIC_STATUS_FORWARD.slice(idx, -1); // exclude 'placed'
+  let minDaysLeft = 0;
+  let maxDaysLeft = 0;
+  for (let i = 0; i < remaining.length; i++) {
+    const phase = remaining[i];
+    const span = PUBLIC_STATUS_TYPICAL_DURATION[phase];
+    if (!span) return null;
+    if (i === 0) {
+      // For the current phase, subtract days already spent so the window
+      // reflects how much of this phase still remains. Floor at zero so an
+      // over-typical phase doesn't push the lower bound negative.
+      const spent = Math.max(0, daysInPhase ?? 0);
+      minDaysLeft += Math.max(0, span.min_days - spent);
+      maxDaysLeft += Math.max(0, span.max_days - spent);
+    } else {
+      minDaysLeft += span.min_days;
+      maxDaysLeft += span.max_days;
+    }
+  }
+  const now = Date.now();
+  return {
+    earliest: new Date(now + minDaysLeft * 86_400_000).toISOString(),
+    latest:   new Date(now + maxDaysLeft * 86_400_000).toISOString(),
+  };
+}
+
 // Activity types we surface to clients. Internal-only types (e.g. fee_paid,
 // note_added) are filtered out so we never leak commercial or candidate detail.
 const PUBLIC_ACTIVITY_TYPES = new Set([
@@ -350,6 +392,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         status_changed_at: row.status_changed_at,
         days_in_phase: daysInPhase,
         phase_duration_typical: PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null,
+        estimated_completion_window: computeCompletionWindow(row.status, daysInPhase),
         is_stalled: isStalled,
         opened_at: row.created_at,
         target_start_date: row.target_start_date,

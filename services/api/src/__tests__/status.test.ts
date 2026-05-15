@@ -109,6 +109,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak estimated_completion_window on 404 (no forward-looking dates to anonymous callers)', async () => {
+    // estimated_completion_window is the API's server-computed earliest/latest
+    // placement-date pair, derived from the current phase + typical phase
+    // durations. The pair belongs only on the verified success shape: an
+    // anonymous caller who could observe these dates on a 404 path could infer
+    // both that the search exists AND its current phase (since the date math
+    // only works once you know how many phases are still ahead).
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-995',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('estimated_completion_window' in body), 'completion window must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak phase_duration_typical on 404 (no pacing benchmarks to anonymous callers)', async () => {
     // phase_duration_typical is the API's canonical typical-duration map for
     // the current phase. It must only appear on the verified success shape —

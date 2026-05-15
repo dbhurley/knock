@@ -105,6 +105,8 @@
         .next-milestone .arrow { color: #b8860b; font-weight: 700; }
 
         .phase-pacing { font-size: 0.78rem; color: #888; margin-top: 0.3rem; }
+        .completion-window { font-size: 0.78rem; color: #6a5b1f; margin-top: 0.25rem; }
+        .completion-window strong { color: #b8860b; font-weight: 600; }
 
         .relative-age { color: #999; font-weight: 400; margin-left: 0.4rem; font-size: 0.82rem; }
         .velocity-summary.warm { color: #b8860b; font-weight: 600; }
@@ -183,6 +185,7 @@
                     <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
                     <div class="progress-meta" id="progress-meta"></div>
                     <div class="phase-pacing" id="phase-pacing" style="display:none"></div>
+                    <div class="completion-window" id="completion-window" style="display:none"></div>
                 </div>
 
                 <div class="pipeline">
@@ -347,8 +350,15 @@
             // phase_step === 0. Showing "Step 0 of 8" with a stub progress bar
             // misleads — the search hasn't regressed, it's paused. Hide the
             // bar/step counter and let the phase explainer + label carry the
-            // state instead.
-            const isProgressing = typeof d.phase_step === 'number' && d.phase_step > 0;
+            // state instead. Negative-terminal phases (cancelled, closed_no_fill)
+            // come back with phase_step === 8 and would otherwise render a full
+            // Knock-gold "100% complete" bar above what's actually a cancellation
+            // or close-without-placement — a triumphant visual on the days the
+            // client is most likely to be paying attention. Same suppression.
+            const NEGATIVE_TERMINAL = ['cancelled', 'closed_no_fill'];
+            const isNegativeTerminal = NEGATIVE_TERMINAL.indexOf(d.status) !== -1;
+            const isProgressing = typeof d.phase_step === 'number' && d.phase_step > 0
+                && !isNegativeTerminal;
             const trackEl = document.querySelector('.progress-track');
             const progressMetaEl = document.getElementById('progress-meta');
             if (isProgressing) {
@@ -370,6 +380,29 @@
                 nextEl.style.display = 'block';
             } else {
                 nextEl.style.display = 'none';
+            }
+
+            // Estimated completion window — a forward-looking date range
+            // computed server-side from the typical durations of remaining
+            // phases. Compounding stickiness: every visit shows two dates
+            // the client can mark on a calendar; as the search progresses
+            // the lower bound walks forward (narrowing the window), and as
+            // a phase slips past its typical max the upper bound drifts too.
+            // Either movement is a fresh reason to revisit. Hidden for
+            // terminal phases (the API returns null) and on older API
+            // versions missing the field, so the page degrades gracefully.
+            const cwEl = document.getElementById('completion-window');
+            if (d.estimated_completion_window &&
+                d.estimated_completion_window.earliest &&
+                d.estimated_completion_window.latest) {
+                const earliest = fmtDate(d.estimated_completion_window.earliest);
+                const latest = fmtDate(d.estimated_completion_window.latest);
+                cwEl.innerHTML = (earliest === latest)
+                    ? 'Typical placement window: <strong>' + earliest + '</strong>'
+                    : 'Typical placement window: <strong>' + earliest + ' – ' + latest + '</strong>';
+                cwEl.style.display = 'block';
+            } else {
+                cwEl.style.display = 'none';
             }
 
             const pacingEl = document.getElementById('phase-pacing');
