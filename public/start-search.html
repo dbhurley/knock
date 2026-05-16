@@ -254,6 +254,16 @@
                         const linkEl = document.getElementById('status-link');
                         if (linkEl) linkEl.href = '/status?ref=' + encodeURIComponent(result.search_number);
                     }
+                    // Seed the status-page email under the same localStorage key
+                    // /status reads on load. First click from the success screen
+                    // therefore lands on a form with both fields already filled —
+                    // the client just hits "Check Status" instead of retyping
+                    // their email. Small touch, but it closes the loop on the
+                    // intake → status-page transition that's the first habituation
+                    // moment of every engagement.
+                    if (data.contact_email) {
+                        try { localStorage.setItem('knock.status.email', data.contact_email); } catch (_) {}
+                    }
                     document.getElementById('success').classList.add('show');
                 } else {
                     // Fallback: send via email

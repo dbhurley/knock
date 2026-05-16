@@ -150,6 +150,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak placement-window fields on 404 (no post-placement signals to anonymous callers)', async () => {
+    // placed_at, placement_followup_until, and placement_followup_days_remaining
+    // are computed only when a search has actually landed in 'placed' state.
+    // The fields belong only on the verified success shape — otherwise an
+    // anonymous caller who could observe them on a 404 path could infer both
+    // that the search exists AND that it has reached the placed terminal.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-994',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('placed_at' in body), 'placed_at must not leak on 404');
+    assert.ok(!('placement_followup_until' in body), 'placement_followup_until must not leak on 404');
+    assert.ok(!('placement_followup_days_remaining' in body), 'placement_followup_days_remaining must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".

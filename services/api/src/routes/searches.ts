@@ -167,6 +167,41 @@ const PUBLIC_STATUS_FORWARD: string[] = [
   'presenting', 'client_interviews', 'offer', 'placed',
 ];
 
+// Length of Janet's post-placement follow-up window. The explainer copy
+// already commits to "Janet stays in touch through the candidate's first
+// 90 days" — surfacing the exact remaining-days countdown turns the
+// post-placement period from a silent surface into one with concrete
+// future dates the client can mark on a calendar. The status page stays
+// useful for 90 days *after* the search closes, not just during it.
+const PLACEMENT_FOLLOWUP_DAYS = 90;
+
+// Compute the progress-bar fill percentage. Forward progressing phases
+// get intra-phase smoothing (using `days_in_phase` against the typical
+// max) so the bar moves day-to-day rather than jumping 12.5% at phase
+// boundaries. A single phase typically runs 2–4 weeks, so without this
+// the bar reads as static for most of an engagement — exactly the
+// window when each return visit needs a fresh visible signal.
+// Terminal phases keep the simple step/8 mapping: the frontend hides the
+// bar for negative-terminals (cancelled, closed_no_fill); `placed`
+// renders at a flat 100% as the celebration cap.
+function computeProgressPercent(
+  phaseStep: number,
+  status: string,
+  daysInPhase: number | null,
+): number {
+  if (phaseStep <= 0) return 0;
+  if (PUBLIC_STATUS_FORWARD.includes(status) && status !== 'placed') {
+    const typical = PUBLIC_STATUS_TYPICAL_DURATION[status];
+    let intra = 0;
+    if (typical && typeof daysInPhase === 'number' && daysInPhase >= 0) {
+      intra = Math.min(1, daysInPhase / typical.max_days);
+    }
+    const combined = ((phaseStep - 1) + intra) / 8;
+    return Math.max(0, Math.min(100, Math.round(combined * 100)));
+  }
+  return Math.min(100, Math.round((phaseStep / 8) * 100));
+}
+
 // Sum the typical duration of the remaining progressing phases (including the
 // unused portion of the current phase) to produce a concrete completion-window
 // range the client can mark on a calendar. Compounding stickiness primitive:
@@ -312,9 +347,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       ? PUBLIC_STATUS_PHASES[nextStatus]?.label ?? null
       : null;
 
-    const progressPercent = phase.step > 0
-      ? Math.min(100, Math.round((phase.step / 8) * 100))
-      : 0;
+    // progressPercent is computed after daysInPhase below so it can include
+    // intra-phase smoothing — see computeProgressPercent().
 
     // Recent client-visible activity. Filtering inside SQL keeps internal
     // notes and commercial activity out of the response by construction.
@@ -376,6 +410,28 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       && typeof daysInPhase === 'number'
       && daysInPhase >= STALL_PHASE_DAYS;
 
+    const progressPercent = computeProgressPercent(phase.step, row.status, daysInPhase);
+
+    // Post-placement 90-day follow-up window. Only populated when the
+    // search has actually landed — terminal-but-not-placed statuses leave
+    // these fields null so the status page can keep its placed-state
+    // celebration distinct from a cancellation or no-fill close.
+    let placedAt: string | null = null;
+    let placementFollowupUntil: string | null = null;
+    let placementFollowupDaysRemaining: number | null = null;
+    if (row.status === 'placed' && row.status_changed_at) {
+      const placedTs = new Date(row.status_changed_at).getTime();
+      if (!Number.isNaN(placedTs)) {
+        placedAt = row.status_changed_at;
+        const untilTs = placedTs + PLACEMENT_FOLLOWUP_DAYS * 86_400_000;
+        placementFollowupUntil = new Date(untilTs).toISOString();
+        placementFollowupDaysRemaining = Math.max(
+          0,
+          Math.ceil((untilTs - Date.now()) / 86_400_000),
+        );
+      }
+    }
+
     reply.send({
       data: {
         search_number: row.search_number,
@@ -396,6 +452,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         is_stalled: isStalled,
         opened_at: row.created_at,
         target_start_date: row.target_start_date,
+        placed_at: placedAt,
+        placement_followup_until: placementFollowupUntil,
+        placement_followup_days_remaining: placementFollowupDaysRemaining,
         candidates_identified: row.candidates_identified ?? 0,
         candidates_presented: row.candidates_presented ?? 0,
         candidates_interviewing: row.candidates_interviewing ?? 0,

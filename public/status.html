@@ -116,6 +116,14 @@
         .empty-state-card.show { display: block; }
         .empty-state-card strong { color: #b8860b; }
 
+        .placement-card { background: linear-gradient(135deg, #faf6ee 0%, #f5ebd0 100%); border: 1px solid #d4a017; border-radius: 8px; padding: 1.3rem 1.5rem; margin-bottom: 1rem; display: none; }
+        .placement-card.show { display: block; }
+        .placement-card .pc-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: #b8860b; font-weight: 700; margin-bottom: 0.5rem; }
+        .placement-card .pc-headline { font-size: 1rem; color: #1a1a1a; line-height: 1.5; margin-bottom: 0.6rem; }
+        .placement-card .pc-headline strong { color: #6a5b1f; }
+        .placement-card .pc-countdown { font-size: 0.85rem; color: #6a5b1f; line-height: 1.5; }
+        .placement-card .pc-countdown strong { color: #b8860b; font-weight: 700; }
+
         .refresh-btn, .share-btn {
             display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; margin-top: 1rem;
             background: transparent; color: #b8860b; border: 1.5px solid #f0e6d0; border-radius: 6px;
@@ -134,7 +142,7 @@
             header, footer, .refresh-btn, .share-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card { display: none !important; }
             body { background: #fff; }
             main { max-width: 100%; padding: 1rem; }
-            .status-card, .activity-card { border: 1px solid #ccc; box-shadow: none; page-break-inside: avoid; }
+            .status-card, .activity-card, .placement-card { border: 1px solid #ccc; box-shadow: none; page-break-inside: avoid; background: #fff; }
             .timeline li { page-break-inside: avoid; }
             a { color: inherit; text-decoration: none; }
             h1 { font-size: 1.2rem; }
@@ -222,6 +230,12 @@
             </div>
 
             <div class="empty-state-card" id="empty-state-card"></div>
+
+            <div class="placement-card" id="placement-card">
+                <div class="pc-label">Placement complete</div>
+                <div class="pc-headline" id="placement-headline"></div>
+                <div class="pc-countdown" id="placement-countdown"></div>
+            </div>
 
             <div class="activity-card" id="activity-card">
                 <div class="label"><span class="icon-glyph" id="activity-icon" style="display:none"></span>Latest update</div>
@@ -448,6 +462,38 @@
                 urgencyEl.style.display = 'inline-block';
             } else {
                 urgencyEl.style.display = 'none';
+            }
+
+            // Post-placement 90-day follow-up window. The status page used to
+            // go silent the moment a search closed — the placement event was
+            // exactly when stickiness should *deepen*, not stop. With the API
+            // now surfacing placed_at + placement_followup_until + days
+            // remaining, we render a celebration card that gives the client a
+            // concrete reason to revisit for 90 days after the placement.
+            // Hidden gracefully if the API is rolled back ahead of the page.
+            const placementCard = document.getElementById('placement-card');
+            if (d.status === 'placed' && d.placed_at) {
+                const placedDate = fmtDate(d.placed_at);
+                const placedAgeDays = Math.max(0, Math.floor((Date.now() - new Date(d.placed_at).getTime()) / 86_400_000));
+                const ageTag = placedAgeDays === 0
+                    ? 'today'
+                    : placedAgeDays + ' day' + (placedAgeDays === 1 ? '' : 's') + ' ago';
+                document.getElementById('placement-headline').innerHTML =
+                    'Placed on <strong>' + placedDate + '</strong> · ' + ageTag + '.';
+                const remaining = d.placement_followup_days_remaining;
+                const untilDate = d.placement_followup_until ? fmtDate(d.placement_followup_until) : null;
+                let countdownText;
+                if (typeof remaining === 'number' && untilDate) {
+                    countdownText = remaining > 0
+                        ? "Janet's 90-day follow-up window runs through <strong>" + untilDate + '</strong> — <strong>' + remaining + ' day' + (remaining === 1 ? '' : 's') + '</strong> remaining.'
+                        : "Janet's 90-day follow-up window completed on <strong>" + untilDate + '</strong>. Reach out anytime if anything else comes up.';
+                } else {
+                    countdownText = "Janet stays in touch through the candidate's first 90 days.";
+                }
+                document.getElementById('placement-countdown').innerHTML = countdownText;
+                placementCard.classList.add('show');
+            } else {
+                placementCard.classList.remove('show');
             }
 
             document.getElementById('opened-at').textContent = fmtDate(d.opened_at);
