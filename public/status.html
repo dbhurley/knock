@@ -103,6 +103,8 @@
 
         .next-milestone { font-size: 0.82rem; color: #666; margin-top: 0.6rem; }
         .next-milestone .arrow { color: #b8860b; font-weight: 700; }
+        .next-preview { font-size: 0.78rem; color: #888; margin-top: 0.25rem; padding-left: 1rem; border-left: 2px solid #f0e6d0; line-height: 1.5; }
+        .next-preview .typical { color: #b8860b; font-weight: 600; }
 
         .phase-pacing { font-size: 0.78rem; color: #888; margin-top: 0.3rem; }
         .completion-window { font-size: 0.78rem; color: #6a5b1f; margin-top: 0.25rem; }
@@ -213,6 +215,7 @@
 
                 <div class="next-milestone" id="next-milestone" style="display:none">
                     <span class="arrow">→</span> Next: <span id="next-milestone-label"></span>
+                    <div class="next-preview" id="next-preview" style="display:none"></div>
                 </div>
 
                 <div class="meta-row"><span class="k">Search opened</span><span class="v"><span id="opened-at"></span><span class="relative-age" id="opened-at-relative"></span></span></div>
@@ -389,11 +392,35 @@
             }
 
             const nextEl = document.getElementById('next-milestone');
+            const nextPreviewEl = document.getElementById('next-preview');
             if (d.next_milestone_label) {
                 document.getElementById('next-milestone-label').textContent = d.next_milestone_label;
                 nextEl.style.display = 'block';
+                // Next-phase preview: explainer sentence + typical duration so
+                // the client sees not just what's coming, but how long that
+                // phase typically runs. Pairs with v1.10's typical-duration
+                // benchmark on the current phase — together they turn the
+                // page from a current-step indicator into a guided journey
+                // with concrete pacing throughout. Hidden gracefully on older
+                // API versions missing either field.
+                const previewBits = [];
+                if (d.next_phase_explainer) previewBits.push(d.next_phase_explainer);
+                if (d.next_phase_duration_typical &&
+                    typeof d.next_phase_duration_typical.min_days === 'number' &&
+                    typeof d.next_phase_duration_typical.max_days === 'number') {
+                    const min = d.next_phase_duration_typical.min_days;
+                    const max = d.next_phase_duration_typical.max_days;
+                    previewBits.push('<span class="typical">Typically ' + min + '–' + max + ' days.</span>');
+                }
+                if (previewBits.length > 0) {
+                    nextPreviewEl.innerHTML = previewBits.join(' ');
+                    nextPreviewEl.style.display = 'block';
+                } else {
+                    nextPreviewEl.style.display = 'none';
+                }
             } else {
                 nextEl.style.display = 'none';
+                nextPreviewEl.style.display = 'none';
             }
 
             // Estimated completion window — a forward-looking date range
@@ -534,9 +561,23 @@
                         : 'Quiet stretch — reply to Janet if you’d like a check-in';
                 } else {
                     velocitySummary.className = 'v velocity-summary ' + (n > 0 ? 'warm' : 'quiet');
-                    velocitySummary.textContent = n === 0
+                    // Anchor the weekly count with an exact "last update" age
+                    // when the API supplies one. "5 updates this week · latest
+                    // 2 days ago" gives the client a much more concrete sense
+                    // of recency than the weekly bucket alone — and it pairs
+                    // naturally with the timeline's relative-time strings so
+                    // the row above and the rows below tell the same story.
+                    let label = n === 0
                         ? 'Quiet stretch — no updates this week'
                         : n + ' update' + (n === 1 ? '' : 's') + ' this week';
+                    if (n > 0 && typeof d.days_since_last_activity === 'number') {
+                        const dsl = d.days_since_last_activity;
+                        const recency = dsl === 0
+                            ? 'latest today'
+                            : 'latest ' + dsl + ' day' + (dsl === 1 ? '' : 's') + ' ago';
+                        label += ' · ' + recency;
+                    }
+                    velocitySummary.textContent = label;
                 }
                 velocityRow.style.display = 'flex';
             } else {
@@ -825,14 +866,28 @@
 
         // Allow deep-linking via ?ref=KNK-2026-001 — pre-fills the field. If we
         // also have a remembered email from a prior visit, prefill that too —
-        // the form still requires a click so the email/ref pair is verified.
+        // verification still happens server-side on the (ref, email) pair.
         const params = new URLSearchParams(location.search);
         const ref = params.get('ref');
         if (ref) form.elements['search_number'].value = ref;
-        try {
-            const remembered = localStorage.getItem(EMAIL_KEY);
-            if (remembered) form.elements['contact_email'].value = remembered;
-        } catch (_) {}
+        let remembered = null;
+        try { remembered = localStorage.getItem(EMAIL_KEY); } catch (_) {}
+        if (remembered) form.elements['contact_email'].value = remembered;
+
+        // Auto-submit when *both* fields are pre-filled (deep-link ref +
+        // remembered email from a prior session). Turns a pinned tab into a
+        // zero-click experience for return visits — the page just loads with
+        // the latest status. The server still verifies the (ref, email) pair
+        // on every submission, so this is purely a UX shortcut for clients
+        // who have already authenticated once. Auto-submit is gated on both
+        // values being present, so a first-time visitor (or one who clears
+        // localStorage) still sees the manual form.
+        if (ref && remembered && form.elements['search_number'].value &&
+            form.elements['contact_email'].value) {
+            form.requestSubmit
+                ? form.requestSubmit()
+                : form.dispatchEvent(new Event('submit', { cancelable: true }));
+        }
     </script>
 </body>
 </html>

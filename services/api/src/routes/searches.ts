@@ -398,6 +398,21 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Days since the most recent client-visible activity. Pairs with
+    // `activity_count_last_7d` + `is_stalled` to give the status page a
+    // concrete anchor on the "Activity" row: "Latest update: 3 days ago"
+    // instead of just relying on the timeline's relative-time formatter.
+    // Same redaction discipline — derived from `latest.created_at`, which
+    // is already part of the public response. Null when there are no
+    // public-visible activities yet (typical on day-1 searches).
+    let daysSinceLastActivity: number | null = null;
+    if (latest?.created_at) {
+      const ms = Date.now() - new Date(latest.created_at).getTime();
+      if (!Number.isNaN(ms) && ms >= 0) {
+        daysSinceLastActivity = Math.floor(ms / 86_400_000);
+      }
+    }
+
     // Honest stall signal: progressing phase, no public activity in a week,
     // and the same phase has been the current phase for two-plus weeks. The
     // status page uses this to soften "Quiet stretch" into a concrete prompt
@@ -445,8 +460,11 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_total: 8,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
+        next_phase_explainer: nextStatus ? PUBLIC_STATUS_EXPLAINERS[nextStatus] ?? null : null,
+        next_phase_duration_typical: nextStatus ? PUBLIC_STATUS_TYPICAL_DURATION[nextStatus] ?? null : null,
         status_changed_at: row.status_changed_at,
         days_in_phase: daysInPhase,
+        days_since_last_activity: daysSinceLastActivity,
         phase_duration_typical: PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null,
         estimated_completion_window: computeCompletionWindow(row.status, daysInPhase),
         is_stalled: isStalled,

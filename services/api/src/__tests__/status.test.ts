@@ -172,6 +172,48 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak days_since_last_activity on 404 (no recency hints to anonymous callers)', async () => {
+    // days_since_last_activity is a derived recency anchor for the public
+    // velocity row. It must only appear on the verified success shape:
+    // observing a non-null integer on the 404 path would let an anonymous
+    // caller infer both that the search exists AND roughly when it was
+    // last touched — exactly the kind of side-channel signal the no-
+    // enumeration contract is designed to prevent.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-993',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('days_since_last_activity' in body), 'recency field must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
+  it('does not leak next-phase preview fields on 404 (no roadmap hints to anonymous callers)', async () => {
+    // next_phase_explainer and next_phase_duration_typical describe the
+    // phase *after* the current one. Together they let a caller infer the
+    // current phase (since the next-phase pair is keyed by it). The fields
+    // belong only on the verified success shape, like phase_explainer and
+    // phase_duration_typical before them.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-992',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('next_phase_explainer' in body), 'next_phase_explainer must not leak on 404');
+    assert.ok(!('next_phase_duration_typical' in body), 'next_phase_duration_typical must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
