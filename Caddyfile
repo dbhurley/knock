@@ -20,11 +20,17 @@ askknock.com {
 	route {
 		# Clean URLs: rewrite /foo to /foo.html before file_server
 		@needsHtml {
-			not path *.html *.css *.js *.svg *.png *.jpg *.gif *.ico *.woff *.woff2 *.xml *.txt
+			not path *.html *.css *.js *.svg *.png *.jpg *.gif *.ico *.woff *.woff2 *.xml *.txt *.webmanifest *.json
 			not path /
 			not path /files/*
 		}
 		rewrite @needsHtml {path}.html
+
+		# Serve the PWA manifest with the spec-blessed content type. Caddy's
+		# default mime DB doesn't include .webmanifest, so without this iOS
+		# Safari falls back to text/plain and refuses to honor the manifest.
+		@manifest path *.webmanifest
+		header @manifest Content-Type "application/manifest+json; charset=utf-8"
 
 		file_server {
 			precompressed gzip br

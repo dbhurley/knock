@@ -193,6 +193,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak activity_count_total on 404 (no engagement-depth hints to anonymous callers)', async () => {
+    // activity_count_total is the cumulative count of public-visible
+    // activities since a search opened. The integer must only appear on the
+    // verified success shape: observing it on the 404 path would let an
+    // anonymous caller infer both that the search exists AND how deep the
+    // engagement has gone — same side-channel concern as the v1.13 days_since
+    // and v1.8 last-7d fields it accompanies.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-991',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('activity_count_total' in body), 'cumulative-count field must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak next-phase preview fields on 404 (no roadmap hints to anonymous callers)', async () => {
     // next_phase_explainer and next_phase_duration_typical describe the
     // phase *after* the current one. Together they let a caller infer the

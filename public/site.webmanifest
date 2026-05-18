@@ -1,0 +1,15 @@
+{
+  "name": "Knock Executive Search",
+  "short_name": "Knock Status",
+  "description": "Live progress on your Knock executive search.",
+  "start_url": "/status",
+  "scope": "/status",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#fafaf8",
+  "theme_color": "#b8860b",
+  "icons": [
+    { "src": "/knock-logo.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/knock-logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

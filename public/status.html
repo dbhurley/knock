@@ -8,7 +8,11 @@
     <meta name="robots" content="noindex">
     <link rel="icon" href="/knock-logo.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/knock-logo.png">
+    <link rel="manifest" href="/site.webmanifest">
     <meta name="theme-color" content="#b8860b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="Knock Status">
     <meta property="og:title" content="Search Status | Knock Executive Search">
     <meta property="og:description" content="Live progress on your Knock executive search. Pin this tab — it updates as the pipeline moves.">
     <meta property="og:type" content="website">
@@ -100,6 +104,8 @@
         .countdown { display: inline-block; margin-left: 0.4rem; font-size: 0.78rem; color: #b8860b; font-weight: 600; }
         .countdown.urgent { color: #b8530b; }
         .countdown.past { color: #888; font-weight: 500; }
+        .cal-link { display: inline-block; margin-left: 0.5rem; font-size: 0.74rem; color: #b8860b; text-decoration: none; border-bottom: 1px dashed rgba(184,134,11,0.4); padding-bottom: 1px; }
+        .cal-link:hover { border-bottom-style: solid; border-bottom-color: #b8860b; }
 
         .next-milestone { font-size: 0.82rem; color: #666; margin-top: 0.6rem; }
         .next-milestone .arrow { color: #b8860b; font-weight: 700; }
@@ -141,7 +147,7 @@
         .velocity-summary.stalled { color: #b8530b; font-weight: 600; }
 
         @media print {
-            header, footer, .refresh-btn, .share-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card { display: none !important; }
+            header, footer, .refresh-btn, .share-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card, .cal-link { display: none !important; }
             body { background: #fff; }
             main { max-width: 100%; padding: 1rem; }
             .status-card, .activity-card, .placement-card { border: 1px solid #ccc; box-shadow: none; page-break-inside: avoid; background: #fff; }
@@ -221,7 +227,8 @@
                 <div class="meta-row"><span class="k">Search opened</span><span class="v"><span id="opened-at"></span><span class="relative-age" id="opened-at-relative"></span></span></div>
                 <div class="meta-row"><span class="k">Last updated</span><span class="v" id="updated-at"></span></div>
                 <div class="meta-row" id="velocity-row" style="display:none"><span class="k">Activity</span><span class="v" id="velocity-summary"></span></div>
-                <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v"><span id="target-start"></span><span class="countdown" id="target-countdown"></span></span></div>
+                <div class="meta-row" id="total-updates-row" style="display:none"><span class="k">Total updates</span><span class="v" id="total-updates-summary"></span></div>
+                <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v"><span id="target-start"></span><span class="countdown" id="target-countdown"></span><a class="cal-link" id="target-cal-link" style="display:none" target="_blank" rel="noopener">Add to calendar</a></span></div>
 
                 <button type="button" class="refresh-btn" id="refresh-btn" title="Re-check status">
                     <span>&#x21bb;</span> Refresh
@@ -583,6 +590,26 @@
             } else {
                 velocityRow.style.display = 'none';
             }
+
+            // Cumulative engagement-depth row. A separate meta-row from the
+            // weekly velocity above — the weekly count tells the client whether
+            // the pipeline is moving *right now*, but the cumulative number is
+            // what grows visibly across the entire engagement and gives every
+            // return visit a number that has nowhere to go but up. Only shown
+            // once the cumulative count exceeds the weekly count (so a fresh
+            // search doesn't show the same number twice on adjacent rows) and
+            // only when total > 0 (no zero-state row on day-1 searches).
+            const totalRow = document.getElementById('total-updates-row');
+            if (typeof d.activity_count_total === 'number'
+                && d.activity_count_total > 0
+                && d.activity_count_total > (d.activity_count_last_7d ?? 0)) {
+                const total = d.activity_count_total;
+                document.getElementById('total-updates-summary').textContent =
+                    total + ' update' + (total === 1 ? '' : 's') + ' since opened';
+                totalRow.style.display = 'flex';
+            } else {
+                totalRow.style.display = 'none';
+            }
             const countdownEl = document.getElementById('target-countdown');
             countdownEl.className = 'countdown';
             countdownEl.textContent = '';
@@ -597,6 +624,47 @@
             if (d.target_start_date && !isTerminal) {
                 document.getElementById('target-start').textContent = fmtDate(d.target_start_date);
                 document.getElementById('target-row').style.display = 'flex';
+                // "Add to calendar" affordance — generates a Google Calendar
+                // all-day event URL that includes a deep-link back to the
+                // status page in the description. Pure frontend; once the
+                // client clicks "Add", the date sits in their calendar with
+                // a Knock-branded title and a link back here — every calendar
+                // alert/reminder becomes a return-visit prompt. Hidden when
+                // target_start_date isn't a parseable date.
+                const calLink = document.getElementById('target-cal-link');
+                const tsdParts = (d.target_start_date || '').slice(0, 10).split('-');
+                if (tsdParts.length === 3 && tsdParts.every(function (p) { return /^\d+$/.test(p); })) {
+                    const startStr = tsdParts.join('');
+                    // Google Calendar treats `dates=YYYYMMDD/YYYYMMDD` as an
+                    // all-day event where the end date is exclusive, so we
+                    // advance the end date by one day to make the event land
+                    // on the actual target_start_date.
+                    const endDate = new Date(Date.UTC(
+                        parseInt(tsdParts[0], 10),
+                        parseInt(tsdParts[1], 10) - 1,
+                        parseInt(tsdParts[2], 10) + 1,
+                    ));
+                    const endStr = endDate.getUTCFullYear().toString() +
+                        String(endDate.getUTCMonth() + 1).padStart(2, '0') +
+                        String(endDate.getUTCDate()).padStart(2, '0');
+                    const title = (d.position_title || 'Executive Search') +
+                        ' target start' +
+                        (d.school_name ? ' — ' + d.school_name : '');
+                    const details = 'Target start date for ' + d.search_number +
+                        '. Live status: ' + location.origin + '/status?ref=' +
+                        encodeURIComponent(d.search_number);
+                    const params = new URLSearchParams({
+                        action: 'TEMPLATE',
+                        text: title,
+                        dates: startStr + '/' + endStr,
+                        details: details,
+                    });
+                    if (d.school_location) params.set('location', d.school_location);
+                    calLink.href = 'https://calendar.google.com/calendar/render?' + params.toString();
+                    calLink.style.display = 'inline-block';
+                } else {
+                    calLink.style.display = 'none';
+                }
                 // Surface a weeks-remaining countdown so the target date isn't
                 // just a static line — it gives the client a concrete reason
                 // to check back as the date approaches. Urgent threshold = 30d.

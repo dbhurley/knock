@@ -377,15 +377,23 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // pipeline is alive (or to prompt a check-in if it isn't). Filtered to
     // PUBLIC_ACTIVITY_TYPES to match what's already visible in recent_activities,
     // so the number can never include internal/commercial rows.
-    const velocityRow = await queryOne<{ count: string }>(
-      `SELECT COUNT(*)::text AS count
+    //
+    // `activity_count_total` is the cumulative count since the search opened
+    // — a monotonically-increasing number that gives the client a tangible
+    // metric of engagement depth. Pairs with v1.8's weekly count and v1.13's
+    // days_since_last_activity to give the Activity row three honest anchors:
+    // weekly tempo, exact recency, and cumulative depth.
+    const velocityRow = await queryOne<{ last_7d: string; total: string }>(
+      `SELECT
+         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::text AS last_7d,
+         COUNT(*)::text AS total
        FROM search_activities
        WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
-         AND activity_type = ANY($2::text[])
-         AND created_at >= NOW() - INTERVAL '7 days'`,
+         AND activity_type = ANY($2::text[])`,
       [row.search_number, activityTypes],
     );
-    const activityCountLast7d = parseInt(velocityRow?.count ?? '0', 10);
+    const activityCountLast7d = parseInt(velocityRow?.last_7d ?? '0', 10);
+    const activityCountTotal = parseInt(velocityRow?.total ?? '0', 10);
 
     // Time spent in the current phase — a simple, honest pacing signal.
     // Only computed when status_changed_at is populated and the search is
@@ -480,6 +488,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         last_activity_at: latest?.created_at ?? null,
         last_activity_summary: latest?.description ?? null,
         activity_count_last_7d: activityCountLast7d,
+        activity_count_total: activityCountTotal,
         recent_activities: activities.map((a) => ({
           activity_type: a.activity_type,
           description: a.description,
