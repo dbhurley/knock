@@ -52,7 +52,10 @@
         .status-card { background: #fff; border: 1px solid #eee; border-radius: 8px; padding: 1.6rem; margin-bottom: 1rem; }
         .status-card h2 { font-size: 1.15rem; font-weight: 700; margin-bottom: 0.25rem; }
         .status-card .school { color: #666; font-size: 0.9rem; }
-        .ref-num { display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f5f0e8; padding: 0.25rem 0.6rem; border-radius: 4px; color: #b8860b; font-weight: 700; font-size: 0.82rem; margin-top: 0.6rem; }
+        .ref-num { display: inline-block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: #f5f0e8; padding: 0.25rem 0.6rem; border-radius: 4px; color: #b8860b; font-weight: 700; font-size: 0.82rem; margin-top: 0.6rem; cursor: pointer; user-select: all; border: 1px solid transparent; transition: border-color 0.15s, background 0.15s; }
+        .ref-num:hover { border-color: #d4a017; background: #faf0d8; }
+        .ref-num.copied { border-color: #b8860b; background: #faf0d8; }
+        .ref-num.copied::after { content: ' ✓ copied'; font-size: 0.7rem; color: #6a5b1f; font-weight: 600; letter-spacing: 0.02em; }
 
         .phase-tracker { margin: 1.5rem 0 0.5rem; }
         .phase-current { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.1em; color: #b8860b; font-weight: 700; margin-bottom: 0.4rem; }
@@ -106,6 +109,7 @@
         .countdown.past { color: #888; font-weight: 500; }
         .cal-link { display: inline-block; margin-left: 0.5rem; font-size: 0.74rem; color: #b8860b; text-decoration: none; border-bottom: 1px dashed rgba(184,134,11,0.4); padding-bottom: 1px; }
         .cal-link:hover { border-bottom-style: solid; border-bottom-color: #b8860b; }
+        .cal-link.ics { margin-left: 0.35rem; }
 
         .next-milestone { font-size: 0.82rem; color: #666; margin-top: 0.6rem; }
         .next-milestone .arrow { color: #b8860b; font-weight: 700; }
@@ -143,11 +147,32 @@
         .share-btn.copied { background: #faf6ee; border-color: #b8860b; }
 
         .auto-refresh-hint { font-size: 0.72rem; color: #aaa; margin-top: 0.4rem; display: inline-block; }
+        .fetched-at { display: block; font-size: 0.7rem; color: #b8860b; margin-top: 0.5rem; letter-spacing: 0.02em; font-weight: 500; }
+        .fetched-at .pulse { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #6cb86c; margin-right: 0.4rem; vertical-align: 1px; animation: pulse 2.4s ease-in-out infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 0.85; } 50% { opacity: 0.35; } }
 
         .velocity-summary.stalled { color: #b8530b; font-weight: 600; }
 
+        .journey-details { margin-top: 1rem; border-top: 1px solid #eee; padding-top: 0.8rem; }
+        .journey-details summary { cursor: pointer; font-size: 0.82rem; color: #b8860b; font-weight: 600; list-style: none; outline: none; padding: 0.2rem 0; }
+        .journey-details summary::-webkit-details-marker { display: none; }
+        .journey-details summary::before { content: '▸ '; display: inline-block; margin-right: 0.2rem; transition: transform 0.2s; font-size: 0.75rem; color: #b8860b; }
+        .journey-details[open] summary::before { content: '▾ '; }
+        .journey-details summary:hover { color: #9a7209; }
+        .journey-list { list-style: none; margin: 0.8rem 0 0; padding: 0; }
+        .journey-list li { position: relative; padding: 0.5rem 0 0.5rem 1.6rem; border-left: 2px solid #f0e6d0; }
+        .journey-list li:last-child { border-left-color: transparent; padding-bottom: 0.2rem; }
+        .journey-list li::before { content: attr(data-step); position: absolute; left: -10px; top: 0.5rem; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 1.5px solid #d4a017; color: #b8860b; font-size: 0.65rem; font-weight: 700; line-height: 15px; text-align: center; }
+        .journey-list li.done::before { background: #b8860b; color: #fff; border-color: #b8860b; content: '✓'; }
+        .journey-list li.current::before { background: #b8860b; color: #fff; border-color: #b8860b; box-shadow: 0 0 0 3px rgba(184,134,11,0.2); }
+        .journey-list .jl-label { font-size: 0.85rem; font-weight: 600; color: #333; }
+        .journey-list li.current .jl-label { color: #b8860b; }
+        .journey-list li.upcoming .jl-label { color: #888; font-weight: 500; }
+        .journey-list .jl-explainer { font-size: 0.78rem; color: #666; line-height: 1.45; margin-top: 0.15rem; }
+        .journey-list .jl-typical { font-size: 0.72rem; color: #aaa; margin-top: 0.15rem; }
+
         @media print {
-            header, footer, .refresh-btn, .share-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card, .cal-link { display: none !important; }
+            header, footer, .refresh-btn, .share-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card, .cal-link, .fetched-at { display: none !important; }
             body { background: #fff; }
             main { max-width: 100%; padding: 1rem; }
             .status-card, .activity-card, .placement-card { border: 1px solid #ccc; box-shadow: none; page-break-inside: avoid; background: #fff; }
@@ -191,7 +216,7 @@
             <div class="status-card">
                 <h2 id="position-title"></h2>
                 <div class="school" id="school-name"></div>
-                <div class="ref-num" id="ref-num"></div>
+                <div class="ref-num" id="ref-num" title="Click to copy" role="button" tabindex="0" aria-label="Reference number — click to copy"></div>
                 <span class="urgency-badge" id="urgency-badge" style="display:none"></span>
 
                 <div class="phase-tracker">
@@ -228,7 +253,7 @@
                 <div class="meta-row"><span class="k">Last updated</span><span class="v" id="updated-at"></span></div>
                 <div class="meta-row" id="velocity-row" style="display:none"><span class="k">Activity</span><span class="v" id="velocity-summary"></span></div>
                 <div class="meta-row" id="total-updates-row" style="display:none"><span class="k">Total updates</span><span class="v" id="total-updates-summary"></span></div>
-                <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v"><span id="target-start"></span><span class="countdown" id="target-countdown"></span><a class="cal-link" id="target-cal-link" style="display:none" target="_blank" rel="noopener">Add to calendar</a></span></div>
+                <div class="meta-row" id="target-row" style="display:none"><span class="k">Target start</span><span class="v"><span id="target-start"></span><span class="countdown" id="target-countdown"></span><a class="cal-link" id="target-cal-link" style="display:none" target="_blank" rel="noopener">Add to Google Calendar</a><a class="cal-link ics" id="target-ics-link" style="display:none" download="knock-target-start.ics">Apple / Outlook (.ics)</a></span></div>
 
                 <button type="button" class="refresh-btn" id="refresh-btn" title="Re-check status">
                     <span>&#x21bb;</span> Refresh
@@ -237,6 +262,7 @@
                     <span>&#x2398;</span> <span id="share-btn-label">Share link</span>
                 </button>
                 <span class="auto-refresh-hint" id="auto-refresh-hint">Auto-refreshes every 3 min while this tab is open</span>
+                <span class="fetched-at" id="fetched-at" style="display:none" aria-live="polite"><span class="pulse"></span><span id="fetched-at-text"></span></span>
             </div>
 
             <div class="empty-state-card" id="empty-state-card"></div>
@@ -253,6 +279,11 @@
                 <div class="when" id="activity-when"></div>
                 <ul class="timeline" id="activity-timeline" style="display:none"></ul>
             </div>
+
+            <details class="journey-details" id="journey-details">
+                <summary>The full search journey</summary>
+                <ul class="journey-list" id="journey-list"></ul>
+            </details>
 
             <p class="help">Questions about where things stand? Reply to your last note from Janet, or email <a href="mailto:janet@askknock.com">janet@askknock.com</a>. Status here updates whenever Janet moves the search forward.</p>
         </div>
@@ -290,6 +321,29 @@
         // don't waste requests on backgrounded tabs.
         const AUTO_REFRESH_MS = 3 * 60 * 1000;
         let autoRefreshTimer = null;
+        // Last successful fetch timestamp. Drives the visible "Updated X ago"
+        // ticker that signals the page is actually live (vs. silent auto-
+        // refresh that the client can't see). Ticker re-renders every 15s so
+        // the text walks forward naturally between API polls.
+        let lastFetchedAt = null;
+        let fetchedAtTicker = null;
+        const FETCHED_AT_TICK_MS = 15 * 1000;
+
+        // Canonical forward order of progressing phases — used to render the
+        // full-journey overview. Mirrors PUBLIC_STATUS_FORWARD in the API
+        // (services/api/src/routes/searches.ts). Kept here as a frontend
+        // fallback so the journey overview renders even when the API hasn't
+        // surfaced a particular field yet.
+        const FORWARD_PHASES = [
+            { key: 'intake',            label: 'Intake review',          typical: '1–5 days'   },
+            { key: 'scoping',           label: 'Scoping & kickoff',      typical: '5–14 days'  },
+            { key: 'sourcing',          label: 'Sourcing candidates',    typical: '14–28 days' },
+            { key: 'screening',         label: 'Screening interviews',   typical: '10–21 days' },
+            { key: 'presenting',        label: 'Presenting finalists',   typical: '3–10 days'  },
+            { key: 'client_interviews', label: 'Client interviews',      typical: '14–28 days' },
+            { key: 'offer',             label: 'Offer & negotiation',    typical: '5–14 days'  },
+            { key: 'placed',            label: 'Placed',                 typical: null         }
+        ];
 
         // Plain-English explainer per phase. Shown beneath the phase label so
         // an early-stage search (no activities yet) still reads as alive.
@@ -307,6 +361,19 @@
             cancelled:         "Search cancelled at the school's request.",
             on_hold:           "Search paused. Reach out to Janet when you're ready to resume."
         };
+
+        // Escape a string for safe inclusion in an iCalendar (RFC 5545) text
+        // value. Commas, semicolons, and backslashes are delimiters in ics
+        // syntax; newlines must be written as the literal two-character `\n`
+        // sequence. Without this, an em-dash-laden position title can break
+        // the entire feed in Outlook (Apple Calendar is more forgiving).
+        function icsEscape(s) {
+            return String(s || '')
+                .replace(/\\/g, '\\\\')
+                .replace(/;/g, '\\;')
+                .replace(/,/g, '\\,')
+                .replace(/\r?\n/g, '\\n');
+        }
 
         function fmtDate(iso) {
             if (!iso) return '—';
@@ -632,6 +699,7 @@
                 // alert/reminder becomes a return-visit prompt. Hidden when
                 // target_start_date isn't a parseable date.
                 const calLink = document.getElementById('target-cal-link');
+                const icsLink = document.getElementById('target-ics-link');
                 const tsdParts = (d.target_start_date || '').slice(0, 10).split('-');
                 if (tsdParts.length === 3 && tsdParts.every(function (p) { return /^\d+$/.test(p); })) {
                     const startStr = tsdParts.join('');
@@ -650,9 +718,10 @@
                     const title = (d.position_title || 'Executive Search') +
                         ' target start' +
                         (d.school_name ? ' — ' + d.school_name : '');
-                    const details = 'Target start date for ' + d.search_number +
-                        '. Live status: ' + location.origin + '/status?ref=' +
+                    const statusUrl = location.origin + '/status?ref=' +
                         encodeURIComponent(d.search_number);
+                    const details = 'Target start date for ' + d.search_number +
+                        '. Live status: ' + statusUrl;
                     const params = new URLSearchParams({
                         action: 'TEMPLATE',
                         text: title,
@@ -662,8 +731,44 @@
                     if (d.school_location) params.set('location', d.school_location);
                     calLink.href = 'https://calendar.google.com/calendar/render?' + params.toString();
                     calLink.style.display = 'inline-block';
+
+                    // .ics fallback for Apple Calendar / Outlook / any client
+                    // that doesn't use Google Calendar. Independent-school
+                    // committees skew heavily toward macOS/iOS, so a Google-
+                    // only link was leaving a meaningful chunk of clients
+                    // without a calendar primitive. Generated inline as a
+                    // data: URI so we don't need a new API endpoint — the
+                    // browser downloads it as a regular .ics file the user
+                    // can double-click to import. RFC 5545 minimum required
+                    // fields: VERSION, PRODID, UID, DTSTAMP, DTSTART, SUMMARY.
+                    // CRLF line endings are mandatory for max compatibility
+                    // (Outlook in particular silently rejects LF-only feeds).
+                    const dtstamp = new Date().toISOString()
+                        .replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+                    const uid = 'knock-' + d.search_number + '-target@askknock.com';
+                    const icsLines = [
+                        'BEGIN:VCALENDAR',
+                        'VERSION:2.0',
+                        'PRODID:-//Knock//Executive Search Status//EN',
+                        'CALSCALE:GREGORIAN',
+                        'METHOD:PUBLISH',
+                        'BEGIN:VEVENT',
+                        'UID:' + uid,
+                        'DTSTAMP:' + dtstamp,
+                        'DTSTART;VALUE=DATE:' + startStr,
+                        'DTEND;VALUE=DATE:' + endStr,
+                        'SUMMARY:' + icsEscape(title),
+                        'DESCRIPTION:' + icsEscape(details),
+                        d.school_location ? 'LOCATION:' + icsEscape(d.school_location) : null,
+                        'URL:' + statusUrl,
+                        'END:VEVENT',
+                        'END:VCALENDAR',
+                    ].filter(Boolean).join('\r\n');
+                    icsLink.href = 'data:text/calendar;charset=utf-8,' + encodeURIComponent(icsLines);
+                    icsLink.style.display = 'inline-block';
                 } else {
                     calLink.style.display = 'none';
+                    icsLink.style.display = 'none';
                 }
                 // Surface a weeks-remaining countdown so the target date isn't
                 // just a static line — it gives the client a concrete reason
@@ -690,6 +795,50 @@
                 }
             } else {
                 document.getElementById('target-row').style.display = 'none';
+            }
+
+            // Full-journey overview — collapsed by default so it doesn't crowd
+            // the at-a-glance status block, but available on every visit for
+            // clients who want the whole arc, not just current + next phase.
+            // Marks each phase as done / current / upcoming based on the
+            // server-supplied phase_step (1-based). Hidden for non-progressing
+            // statuses (on_hold) and for terminal-but-not-placed (cancelled,
+            // closed_no_fill) where a "you are here" pin would be misleading.
+            const journeyDetails = document.getElementById('journey-details');
+            const journeyList = document.getElementById('journey-list');
+            const NEGATIVE_TERMINAL_J = ['cancelled', 'closed_no_fill'];
+            const showJourney = typeof d.phase_step === 'number' && d.phase_step > 0
+                && NEGATIVE_TERMINAL_J.indexOf(d.status) === -1;
+            if (showJourney) {
+                journeyList.innerHTML = '';
+                FORWARD_PHASES.forEach(function(p, i) {
+                    const step = i + 1;
+                    const li = document.createElement('li');
+                    li.setAttribute('data-step', String(step));
+                    let cls;
+                    if (step < d.phase_step)      cls = 'done';
+                    else if (step === d.phase_step) cls = 'current';
+                    else                          cls = 'upcoming';
+                    li.classList.add(cls);
+                    const lbl = document.createElement('div');
+                    lbl.className = 'jl-label';
+                    lbl.textContent = p.label;
+                    li.appendChild(lbl);
+                    const ex = document.createElement('div');
+                    ex.className = 'jl-explainer';
+                    ex.textContent = PHASE_EXPLAINERS[p.key] || '';
+                    li.appendChild(ex);
+                    if (p.typical) {
+                        const typ = document.createElement('div');
+                        typ.className = 'jl-typical';
+                        typ.textContent = 'Typically ' + p.typical;
+                        li.appendChild(typ);
+                    }
+                    journeyList.appendChild(li);
+                });
+                journeyDetails.style.display = 'block';
+            } else {
+                journeyDetails.style.display = 'none';
             }
 
             const actCard = document.getElementById('activity-card');
@@ -820,7 +969,33 @@
                 return null;
             }
             const body = await res.json();
+            lastFetchedAt = Date.now();
+            renderFetchedAt();
+            startFetchedAtTicker();
             return body.data;
+        }
+
+        function renderFetchedAt() {
+            const el = document.getElementById('fetched-at');
+            const txt = document.getElementById('fetched-at-text');
+            if (!lastFetchedAt) { el.style.display = 'none'; return; }
+            const sec = Math.max(0, Math.floor((Date.now() - lastFetchedAt) / 1000));
+            let label;
+            if (sec < 5)        label = 'Updated just now';
+            else if (sec < 60)  label = 'Updated ' + sec + ' seconds ago';
+            else if (sec < 3600) {
+                const m = Math.floor(sec / 60);
+                label = 'Updated ' + m + ' minute' + (m === 1 ? '' : 's') + ' ago';
+            } else {
+                const h = Math.floor(sec / 3600);
+                label = 'Updated ' + h + ' hour' + (h === 1 ? '' : 's') + ' ago';
+            }
+            txt.textContent = label;
+            el.style.display = 'block';
+        }
+        function startFetchedAtTicker() {
+            if (fetchedAtTicker) return;
+            fetchedAtTicker = setInterval(renderFetchedAt, FETCHED_AT_TICK_MS);
         }
 
         function startAutoRefresh() {
@@ -903,6 +1078,32 @@
                 // user can at least copy by hand.
                 window.prompt('Copy this link to share the status page:', url);
             }
+        });
+
+        // Click-to-copy on the reference-number pill. Clients re-type
+        // KNK-XXXX-NNN every time they email Janet or paste it into a board
+        // packet — a tiny shortcut, but every visit to this page becomes
+        // *the* place to grab the canonical reference rather than digging
+        // through past emails. The "✓ copied" state animates back to default
+        // after a second so the visual reverts to the resting pill design.
+        const refNumEl = document.getElementById('ref-num');
+        let refCopyTimer = null;
+        async function copyRefNumber() {
+            const text = (refNumEl.textContent || '').trim();
+            if (!text) return;
+            try {
+                await navigator.clipboard.writeText(text);
+                refNumEl.classList.add('copied');
+                if (refCopyTimer) clearTimeout(refCopyTimer);
+                refCopyTimer = setTimeout(function() { refNumEl.classList.remove('copied'); }, 1400);
+            } catch (_) {
+                // No clipboard API — fall through silently; the pill already
+                // has user-select: all so a manual triple-click + Cmd-C works.
+            }
+        }
+        refNumEl.addEventListener('click', copyRefNumber);
+        refNumEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); copyRefNumber(); }
         });
 
         refreshBtn.addEventListener('click', async function() {
