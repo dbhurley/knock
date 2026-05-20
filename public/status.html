@@ -136,14 +136,15 @@
         .placement-card .pc-countdown { font-size: 0.85rem; color: #6a5b1f; line-height: 1.5; }
         .placement-card .pc-countdown strong { color: #b8860b; font-weight: 700; }
 
-        .refresh-btn, .share-btn {
+        .refresh-btn, .share-btn, .email-btn {
             display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.5rem 0.9rem; margin-top: 1rem;
             background: transparent; color: #b8860b; border: 1.5px solid #f0e6d0; border-radius: 6px;
             font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.2s;
+            text-decoration: none;
         }
-        .refresh-btn:hover, .share-btn:hover { background: #faf6ee; border-color: #b8860b; }
+        .refresh-btn:hover, .share-btn:hover, .email-btn:hover { background: #faf6ee; border-color: #b8860b; }
         .refresh-btn:disabled, .share-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .share-btn { margin-left: 0.4rem; }
+        .share-btn, .email-btn { margin-left: 0.4rem; }
         .share-btn.copied { background: #faf6ee; border-color: #b8860b; }
 
         .auto-refresh-hint { font-size: 0.72rem; color: #aaa; margin-top: 0.4rem; display: inline-block; }
@@ -170,9 +171,11 @@
         .journey-list li.upcoming .jl-label { color: #888; font-weight: 500; }
         .journey-list .jl-explainer { font-size: 0.78rem; color: #666; line-height: 1.45; margin-top: 0.15rem; }
         .journey-list .jl-typical { font-size: 0.72rem; color: #aaa; margin-top: 0.15rem; }
+        .journey-list .jl-when { font-size: 0.72rem; color: #b8860b; margin-top: 0.15rem; font-weight: 600; }
+        .journey-list li.upcoming .jl-when { display: none; }
 
         @media print {
-            header, footer, .refresh-btn, .share-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card, .cal-link, .fetched-at { display: none !important; }
+            header, footer, .refresh-btn, .share-btn, .email-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card, .cal-link, .fetched-at { display: none !important; }
             body { background: #fff; }
             main { max-width: 100%; padding: 1rem; }
             .status-card, .activity-card, .placement-card { border: 1px solid #ccc; box-shadow: none; page-break-inside: avoid; background: #fff; }
@@ -261,6 +264,9 @@
                 <button type="button" class="share-btn" id="share-btn" title="Copy a link to this status page">
                     <span>&#x2398;</span> <span id="share-btn-label">Share link</span>
                 </button>
+                <a class="email-btn" id="email-btn" href="mailto:janet@askknock.com" title="Email Janet about this search">
+                    <span>&#9993;</span> <span>Email Janet</span>
+                </a>
                 <span class="auto-refresh-hint" id="auto-refresh-hint">Auto-refreshes every 3 min while this tab is open</span>
                 <span class="fetched-at" id="fetched-at" style="display:none" aria-live="polite"><span class="pulse"></span><span id="fetched-at-text"></span></span>
             </div>
@@ -281,7 +287,7 @@
             </div>
 
             <details class="journey-details" id="journey-details">
-                <summary>The full search journey</summary>
+                <summary id="journey-summary">The full search journey</summary>
                 <ul class="journey-list" id="journey-list"></ul>
             </details>
 
@@ -415,6 +421,25 @@
             document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
             document.getElementById('ref-num').textContent = d.search_number;
             document.getElementById('phase-label').textContent = d.phase_label;
+
+            // Pre-fill the "Email Janet" mailto with the canonical ref + position
+            // title in the subject line. The status page used to be a read-only
+            // surface — see the status, close the tab. This turns it into an
+            // action surface: a question, concern, or update from the committee
+            // is one tap away from Janet's inbox, and the reference number is
+            // already in the thread so nothing has to be hunted down. Every
+            // outbound email pre-tagged with KNK-XXXX-NNN also reinforces the
+            // canonical reference as the way to talk about the search.
+            const emailBtn = document.getElementById('email-btn');
+            if (emailBtn && d.search_number) {
+                const subjectBits = ['Re: ' + d.search_number];
+                if (d.position_title) {
+                    const where = d.school_name ? d.position_title + ' at ' + d.school_name : d.position_title;
+                    subjectBits.push(where);
+                }
+                const subject = subjectBits.join(' — ');
+                emailBtn.href = 'mailto:janet@askknock.com?subject=' + encodeURIComponent(subject);
+            }
 
             // Tab title carries the phase + ref so a pinned tab is a useful
             // reminder of where the search stands. Restored on form reset.
@@ -810,7 +835,35 @@
             const showJourney = typeof d.phase_step === 'number' && d.phase_step > 0
                 && NEGATIVE_TERMINAL_J.indexOf(d.status) === -1;
             if (showJourney) {
+                // Auto-expand + scroll into view when the URL hash points
+                // here. Pre-paves the planned status-change reminder email
+                // from roadmap #4 — those emails can deep-link to
+                // `/status?ref=…#journey-details` and the recipient lands
+                // with the full-arc view already open and in their viewport,
+                // not collapsed below the fold. One-time on initial render
+                // (commitHighWaterMark) so an auto-refresh poll doesn't
+                // re-scroll the page underneath the client mid-read.
+                if (commitMark && location.hash === '#journey-details') {
+                    journeyDetails.open = true;
+                    setTimeout(function() {
+                        try { journeyDetails.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
+                    }, 80);
+                }
                 journeyList.innerHTML = '';
+                // Index phase_history by phase key so each journey entry can
+                // pull its dated milestone in O(1). The API already collapses
+                // duplicates and seeds the opening phase from `created_at`,
+                // so a missing entry here means "phase not yet entered" —
+                // which is exactly the upcoming-phase case we suppress dates
+                // for anyway (see CSS: .upcoming .jl-when { display: none }).
+                const historyMap = {};
+                if (Array.isArray(d.phase_history)) {
+                    d.phase_history.forEach(function(h) {
+                        if (h && h.phase && h.entered_at) {
+                            historyMap[h.phase] = h.entered_at;
+                        }
+                    });
+                }
                 FORWARD_PHASES.forEach(function(p, i) {
                     const step = i + 1;
                     const li = document.createElement('li');
@@ -833,6 +886,24 @@
                         typ.className = 'jl-typical';
                         typ.textContent = 'Typically ' + p.typical;
                         li.appendChild(typ);
+                    }
+                    // Dated milestone on done/current phases — the journey
+                    // overview was previously a static checklist, identical
+                    // on every visit until the next phase boundary. With
+                    // real entry dates from phase_history, each return visit
+                    // shows a permanent dated archive of progress: "✓ Apr 15
+                    // · Sourcing · Apr 22 · Screening (current, since May
+                    // 04)". Long engagements end up reading as a story, not
+                    // just a cursor. Upcoming phases stay dateless (hidden
+                    // via CSS) so the overview doesn't pretend to predict
+                    // exact future dates the placement window already covers.
+                    const enteredAt = historyMap[p.key];
+                    if (enteredAt && cls !== 'upcoming') {
+                        const wh = document.createElement('div');
+                        wh.className = 'jl-when';
+                        const dateStr = fmtDate(enteredAt);
+                        wh.textContent = (cls === 'current' ? 'Started ' : 'Entered ') + dateStr;
+                        li.appendChild(wh);
                     }
                     journeyList.appendChild(li);
                 });

@@ -435,6 +435,59 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
 
     const progressPercent = computeProgressPercent(phase.step, row.status, daysInPhase);
 
+    // Phase-transition history. Drawn from the `status_change` rows in
+    // search_activities (one per actual transition, auto-logged by the v1.3
+    // PATCH /api/v1/searches/:id handler) plus a synthetic initial entry at
+    // `searches.created_at` for whatever phase the search opened in. Sorted
+    // ascending and de-duplicated on the (phase) key — same phase visited
+    // twice in a row collapses to the first entry, since `entered_at` for
+    // the journey overview means "first arrival in this phase". Hidden on
+    // 404 like every other personalized field.
+    //
+    // What it unlocks on the status page: the full-journey overview can
+    // render real dated milestones on completed phases ("Sourcing · Apr 22"
+    // instead of just a checkmark). A long engagement (10–16 weeks) ends up
+    // as a permanent dated archive the client can scroll back through —
+    // every successful transition becomes a dated artifact, not just an
+    // ephemeral "step 5 of 8" cursor. Compounds with v1.5's new-since-last-
+    // visit indicator (which surfaces *recent* changes) by giving the
+    // *historical* changes equal visual weight.
+    const phaseTransitions = await query<{
+      from_phase: string | null;
+      to_phase: string;
+      entered_at: string;
+    }>(
+      `SELECT (metadata->>'from') AS from_phase,
+              (metadata->>'to')   AS to_phase,
+              created_at          AS entered_at
+       FROM search_activities
+       WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
+         AND activity_type = 'status_change'
+         AND metadata ? 'to'
+       ORDER BY created_at ASC`,
+      [row.search_number],
+    );
+    // Map (phase → first-entered-at). Same phase visited twice in a row
+    // (e.g. paused → resumed) collapses to the first arrival so the journey
+    // overview's dated milestones reflect when each phase first began.
+    const phaseHistoryMap = new Map<string, string>();
+    // Seed the phase the search opened in — the first status_change row
+    // only fires on the next transition, so without seeding from created_at
+    // the original opening phase would render undated on the journey
+    // overview. If there are no transitions yet, the search is still in
+    // its opening phase, so that phase is `row.status`. Once any transition
+    // exists, the opening phase is the `from` of the first transition.
+    const openingPhase = phaseTransitions[0]?.from_phase ?? row.status;
+    if (openingPhase) phaseHistoryMap.set(openingPhase, row.created_at);
+    for (const t of phaseTransitions) {
+      if (!phaseHistoryMap.has(t.to_phase)) {
+        phaseHistoryMap.set(t.to_phase, t.entered_at);
+      }
+    }
+    const phaseHistory = Array.from(phaseHistoryMap.entries())
+      .map(([phase, entered_at]) => ({ phase, entered_at }))
+      .sort((a, b) => new Date(a.entered_at).getTime() - new Date(b.entered_at).getTime());
+
     // Post-placement 90-day follow-up window. Only populated when the
     // search has actually landed — terminal-but-not-placed statuses leave
     // these fields null so the status page can keep its placed-state
@@ -477,6 +530,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         estimated_completion_window: computeCompletionWindow(row.status, daysInPhase),
         is_stalled: isStalled,
         opened_at: row.created_at,
+        phase_history: phaseHistory,
         target_start_date: row.target_start_date,
         placed_at: placedAt,
         placement_followup_until: placementFollowupUntil,

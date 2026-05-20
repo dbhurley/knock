@@ -235,6 +235,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak phase_history on 404 (no transition-archive hints to anonymous callers)', async () => {
+    // phase_history is the API's per-phase entry-date archive (one entry per
+    // phase the search has been in, ordered ascending). The array must only
+    // appear on the verified success shape: observing it on the 404 path
+    // would let an anonymous caller infer both that the search exists AND
+    // when it entered each phase — exactly the kind of historical signal the
+    // no-enumeration contract is designed to keep behind email verification.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-990',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('phase_history' in body), 'phase_history must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
