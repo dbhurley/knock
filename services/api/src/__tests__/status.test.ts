@@ -235,6 +235,48 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak velocity-trend fields on 404 (no week-over-week hints to anonymous callers)', async () => {
+    // activity_count_prev_7d and velocity_trend describe the previous 7-day
+    // window and the categorical comparison against it. Both belong only on
+    // the verified success shape: observing them on the 404 path would let
+    // an anonymous caller infer the existence + tempo of a search, same
+    // side-channel concern as v1.8's activity_count_last_7d before them.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-989',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('activity_count_prev_7d' in body), 'prev-week count must not leak on 404');
+    assert.ok(!('velocity_trend' in body), 'velocity_trend must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
+  it('does not leak activity_breakdown on 404 (no per-type counts to anonymous callers)', async () => {
+    // activity_breakdown is the cumulative per-type counts the public status
+    // page renders as the "Engagement at a glance" strip. Observing the
+    // object on the 404 path would let an anonymous caller infer not just
+    // that a search exists, but the shape of the engagement so far (how
+    // many candidates sourced, presented, interviewed, etc.). Belongs only
+    // on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-988',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('activity_breakdown' in body), 'activity_breakdown must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak phase_history on 404 (no transition-archive hints to anonymous callers)', async () => {
     // phase_history is the API's per-phase entry-date archive (one entry per
     // phase the search has been in, ordered ascending). The array must only
