@@ -549,6 +549,14 @@
                     const max = d.next_phase_duration_typical.max_days;
                     previewBits.push('<span class="typical">Typically ' + min + '–' + max + ' days.</span>');
                 }
+                // Near-term ETA for when the next phase typically begins —
+                // a single concrete date the client can look forward to,
+                // closer in than the cumulative placement window. Walks
+                // forward as the current phase progresses, so it stays a
+                // fresh reason to revisit. Hidden on older API versions.
+                if (d.next_milestone_eta) {
+                    previewBits.push('<span class="typical">Expected to begin around <strong>' + fmtDate(d.next_milestone_eta) + '</strong>.</span>');
+                }
                 if (previewBits.length > 0) {
                     nextPreviewEl.innerHTML = previewBits.join(' ');
                     nextPreviewEl.style.display = 'block';
@@ -666,7 +674,12 @@
             // calendar math. Hidden when the open date is missing or invalid.
             const openedRelEl = document.getElementById('opened-at-relative');
             if (d.opened_at) {
-                const ageDays = Math.floor((Date.now() - new Date(d.opened_at).getTime()) / 86_400_000);
+                // Prefer the API's canonical engagement_age_days (one source
+                // of truth, shared with the planned reminder email / PDF), and
+                // fall back to local date math on older API versions.
+                const ageDays = (typeof d.engagement_age_days === 'number')
+                    ? d.engagement_age_days
+                    : Math.floor((Date.now() - new Date(d.opened_at).getTime()) / 86_400_000);
                 if (!isNaN(ageDays) && ageDays >= 0) {
                     openedRelEl.textContent = ageDays === 0
                         ? '(today)'
@@ -975,7 +988,7 @@
                 if (Array.isArray(d.phase_history)) {
                     d.phase_history.forEach(function(h) {
                         if (h && h.phase && h.entered_at) {
-                            historyMap[h.phase] = h.entered_at;
+                            historyMap[h.phase] = h;
                         }
                     });
                 }
@@ -1012,12 +1025,22 @@
                     // just a cursor. Upcoming phases stay dateless (hidden
                     // via CSS) so the overview doesn't pretend to predict
                     // exact future dates the placement window already covers.
-                    const enteredAt = historyMap[p.key];
-                    if (enteredAt && cls !== 'upcoming') {
+                    const hist = historyMap[p.key];
+                    if (hist && hist.entered_at && cls !== 'upcoming') {
                         const wh = document.createElement('div');
                         wh.className = 'jl-when';
-                        const dateStr = fmtDate(enteredAt);
-                        wh.textContent = (cls === 'current' ? 'Started ' : 'Entered ') + dateStr;
+                        const dateStr = fmtDate(hist.entered_at);
+                        let whText = (cls === 'current' ? 'Started ' : 'Entered ') + dateStr;
+                        // Actual elapsed days for a completed phase (the gap to
+                        // the next phase's entry date, supplied server-side).
+                        // Turns the dated archive into a durational one the
+                        // client can read against the "Typically …" benchmark
+                        // shown just above. Only completed phases carry a
+                        // duration — the current phase is still running.
+                        if (cls === 'done' && typeof hist.duration_days === 'number' && hist.duration_days >= 0) {
+                            whText += ' · ' + hist.duration_days + ' day' + (hist.duration_days === 1 ? '' : 's');
+                        }
+                        wh.textContent = whText;
                         li.appendChild(wh);
                     }
                     journeyList.appendChild(li);

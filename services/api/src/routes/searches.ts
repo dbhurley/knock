@@ -481,6 +481,38 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
 
     const progressPercent = computeProgressPercent(phase.step, row.status, daysInPhase);
 
+    // Expected start date of the *next* phase — a near-term, single-date
+    // anchor that complements the v1.11 cumulative completion window (which
+    // is the far end of the same calculation). Computed as now + however much
+    // of the current phase's typical-max duration still remains, floored at
+    // zero so an over-typical phase reads as "any day now" rather than a past
+    // date. Only meaningful for progressing phases that have a next phase:
+    // null for terminal/non-progressing states and for `placed`. Gives the
+    // client one concrete date to look forward to between visits, closer in
+    // than the placement window — a fresh reason to revisit as it approaches.
+    let nextMilestoneEta: string | null = null;
+    if (nextStatus && PUBLIC_STATUS_FORWARD.includes(row.status) && row.status !== 'placed') {
+      const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
+      if (typical) {
+        const remaining = Math.max(0, typical.max_days - Math.max(0, daysInPhase ?? 0));
+        nextMilestoneEta = new Date(Date.now() + remaining * 86_400_000).toISOString();
+      }
+    }
+
+    // Canonical server-computed engagement length (days since the search
+    // opened). The status page already derives this client-side for its
+    // "(11 days ago)" tag, but surfacing it from the API makes it the single
+    // source of truth — the planned status-change reminder email (roadmap #4)
+    // and future PDF status reports can quote the same "your search has been
+    // running 18 days" number the page shows, instead of each surface doing
+    // its own date math. Same one-source-of-truth rationale as v1.9's
+    // phase_explainer. Null when created_at is missing or unparseable.
+    let engagementAgeDays: number | null = null;
+    if (row.created_at) {
+      const ms = Date.now() - new Date(row.created_at).getTime();
+      if (!Number.isNaN(ms) && ms >= 0) engagementAgeDays = Math.floor(ms / 86_400_000);
+    }
+
     // Phase-transition history. Drawn from the `status_change` rows in
     // search_activities (one per actual transition, auto-logged by the v1.3
     // PATCH /api/v1/searches/:id handler) plus a synthetic initial entry at
@@ -530,9 +562,27 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phaseHistoryMap.set(t.to_phase, t.entered_at);
       }
     }
-    const phaseHistory = Array.from(phaseHistoryMap.entries())
+    const phaseHistorySorted = Array.from(phaseHistoryMap.entries())
       .map(([phase, entered_at]) => ({ phase, entered_at }))
       .sort((a, b) => new Date(a.entered_at).getTime() - new Date(b.entered_at).getTime());
+    // Attach how long each *completed* phase actually ran — the gap between
+    // its own entry date and the next phase's entry date. The last entry is
+    // the current phase (still running), so its duration is null. This turns
+    // the v1.16 dated journey from "Entered Apr 22" into "Entered Apr 22 ·
+    // 12 days", giving the client a real elapsed-time archive they can compare
+    // against the "Typically 14–28 days" benchmark already shown per phase.
+    // A long engagement reads as a story with concrete durations, not just a
+    // list of dates. Nested inside phase_history, so the existing 404-leak
+    // test for phase_history already covers it.
+    const phaseHistory = phaseHistorySorted.map((entry, i) => {
+      const next = phaseHistorySorted[i + 1];
+      let durationDays: number | null = null;
+      if (next) {
+        const ms = new Date(next.entered_at).getTime() - new Date(entry.entered_at).getTime();
+        if (!Number.isNaN(ms) && ms >= 0) durationDays = Math.floor(ms / 86_400_000);
+      }
+      return { phase: entry.phase, entered_at: entry.entered_at, duration_days: durationDays };
+    });
 
     // Post-placement 90-day follow-up window. Only populated when the
     // search has actually landed — terminal-but-not-placed statuses leave
@@ -567,6 +617,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_total: 8,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
+        next_milestone_eta: nextMilestoneEta,
         next_phase_explainer: nextStatus ? PUBLIC_STATUS_EXPLAINERS[nextStatus] ?? null : null,
         next_phase_duration_typical: nextStatus ? PUBLIC_STATUS_TYPICAL_DURATION[nextStatus] ?? null : null,
         status_changed_at: row.status_changed_at,
@@ -576,6 +627,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         estimated_completion_window: computeCompletionWindow(row.status, daysInPhase),
         is_stalled: isStalled,
         opened_at: row.created_at,
+        engagement_age_days: engagementAgeDays,
         phase_history: phaseHistory,
         target_start_date: row.target_start_date,
         placed_at: placedAt,

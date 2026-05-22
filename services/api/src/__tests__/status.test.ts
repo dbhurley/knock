@@ -298,6 +298,46 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak next_milestone_eta on 404 (no forward-date hints to anonymous callers)', async () => {
+    // next_milestone_eta is the server-computed expected start date of the
+    // next phase, derived from the current phase + its typical duration. The
+    // single date belongs only on the verified success shape: observing it on
+    // the 404 path would let an anonymous caller infer both that the search
+    // exists AND its current phase (the date math is keyed by the current phase).
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-987',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('next_milestone_eta' in body), 'next_milestone_eta must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
+  it('does not leak engagement_age_days on 404 (no engagement-length hints to anonymous callers)', async () => {
+    // engagement_age_days is the canonical days-since-opened integer. It must
+    // only appear on the verified success shape: observing it on the 404 path
+    // would let an anonymous caller infer both that the search exists AND how
+    // long it has been running — same side-channel concern as the v1.14
+    // activity_count_total and v1.13 days_since_last_activity fields.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-986',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('engagement_age_days' in body), 'engagement_age_days must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
