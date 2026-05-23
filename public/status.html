@@ -555,7 +555,26 @@
                 // forward as the current phase progresses, so it stays a
                 // fresh reason to revisit. Hidden on older API versions.
                 if (d.next_milestone_eta) {
-                    previewBits.push('<span class="typical">Expected to begin around <strong>' + fmtDate(d.next_milestone_eta) + '</strong>.</span>');
+                    // When the current phase has reached or passed its typical
+                    // max, the API hands back today's date / a zero countdown.
+                    // Rendering a literal (and increasingly stale) date in that
+                    // case reads oddly, so show "any day now" instead — matching
+                    // the API's documented intent. Otherwise show the date plus
+                    // a glanceable "in ~N days" that decrements daily (a fresh
+                    // reason to revisit). Prefer the canonical integer countdown
+                    // and fall back to the date alone on older API versions.
+                    const daysUntil = (typeof d.days_until_next_milestone === 'number')
+                        ? d.days_until_next_milestone
+                        : null;
+                    if (daysUntil !== null && daysUntil <= 0) {
+                        previewBits.push('<span class="typical">Expected to begin <strong>any day now</strong>.</span>');
+                    } else {
+                        let etaText = 'Expected to begin around <strong>' + fmtDate(d.next_milestone_eta) + '</strong>';
+                        if (daysUntil !== null && daysUntil > 0) {
+                            etaText += ' (in ~' + daysUntil + ' day' + (daysUntil === 1 ? '' : 's') + ')';
+                        }
+                        previewBits.push('<span class="typical">' + etaText + '.</span>');
+                    }
                 }
                 if (previewBits.length > 0) {
                     nextPreviewEl.innerHTML = previewBits.join(' ');
@@ -753,9 +772,18 @@
                 const prev = d.activity_count_prev_7d;
                 if (trend === 'accelerating') {
                     velocityTrendEl.classList.add('accelerating');
-                    velocityTrendEl.textContent = '↑ up from ' + prev;
-                    velocityTrendEl.title = prev + ' update' + (prev === 1 ? '' : 's')
-                        + ' the week before — pipeline is picking up';
+                    // "up from 0" reads awkwardly on a search's first active
+                    // week — there was nothing to be "up from". Use "ramping
+                    // up" when the prior window was empty so the very first
+                    // burst of activity reads as a fresh start, not a delta.
+                    if (prev === 0) {
+                        velocityTrendEl.textContent = '↑ ramping up';
+                        velocityTrendEl.title = 'No updates the week before — the pipeline is ramping up';
+                    } else {
+                        velocityTrendEl.textContent = '↑ up from ' + prev;
+                        velocityTrendEl.title = prev + ' update' + (prev === 1 ? '' : 's')
+                            + ' the week before — pipeline is picking up';
+                    }
                     velocityTrendEl.style.display = 'inline-block';
                 } else if (trend === 'cooling') {
                     velocityTrendEl.classList.add('cooling');

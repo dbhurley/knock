@@ -490,12 +490,23 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // null for terminal/non-progressing states and for `placed`. Gives the
     // client one concrete date to look forward to between visits, closer in
     // than the placement window — a fresh reason to revisit as it approaches.
+    //
+    // `days_until_next_milestone` is the same calculation expressed as a
+    // canonical server-computed integer (the count of typical-max days still
+    // remaining in the current phase). Same one-source-of-truth rationale as
+    // engagement_age_days: the status page can render a glanceable "in ~5
+    // days" countdown that decrements daily (a fresh reason to revisit), and
+    // the planned reminder email / PDF can quote the same integer instead of
+    // re-deriving it from the ISO date. Zero means "any day now" — the phase
+    // has reached or passed its typical max. Null whenever the ETA is null.
     let nextMilestoneEta: string | null = null;
+    let daysUntilNextMilestone: number | null = null;
     if (nextStatus && PUBLIC_STATUS_FORWARD.includes(row.status) && row.status !== 'placed') {
       const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
       if (typical) {
         const remaining = Math.max(0, typical.max_days - Math.max(0, daysInPhase ?? 0));
         nextMilestoneEta = new Date(Date.now() + remaining * 86_400_000).toISOString();
+        daysUntilNextMilestone = remaining;
       }
     }
 
@@ -618,6 +629,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
         next_milestone_eta: nextMilestoneEta,
+        days_until_next_milestone: daysUntilNextMilestone,
         next_phase_explainer: nextStatus ? PUBLIC_STATUS_EXPLAINERS[nextStatus] ?? null : null,
         next_phase_duration_typical: nextStatus ? PUBLIC_STATUS_TYPICAL_DURATION[nextStatus] ?? null : null,
         status_changed_at: row.status_changed_at,

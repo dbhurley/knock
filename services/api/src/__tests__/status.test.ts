@@ -318,6 +318,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak days_until_next_milestone on 404 (no forward-countdown hints to anonymous callers)', async () => {
+    // days_until_next_milestone is the canonical integer companion to
+    // next_milestone_eta — the count of typical-max days still remaining in
+    // the current phase. Like the ISO date it accompanies, the integer is
+    // keyed by the current phase, so observing it on the 404 path would let
+    // an anonymous caller infer both that the search exists AND its current
+    // phase. Belongs only on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-985',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('days_until_next_milestone' in body), 'days_until_next_milestone must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak engagement_age_days on 404 (no engagement-length hints to anonymous callers)', async () => {
     // engagement_age_days is the canonical days-since-opened integer. It must
     // only appear on the verified success shape: observing it on the 404 path
