@@ -211,10 +211,17 @@ function computeProgressPercent(
 // revisit when the window is about to slip. Returns null for terminal /
 // non-progressing states (placed, cancelled, closed_no_fill, on_hold) where
 // a forward-looking estimate is either meaningless or misleading.
+//
+// Returns both the ISO date pair (`estimated_completion_window`) and the raw
+// day counts the dates were derived from. The integers are the canonical
+// source the planned reminder email / PDF (roadmap #4) can quote as
+// "about 6–10 weeks to placement" without re-deriving a day-count from the
+// ISO dates — same one-source-of-truth rationale as engagement_age_days and
+// days_until_next_milestone.
 function computeCompletionWindow(
   currentStatus: string,
   daysInPhase: number | null,
-): { earliest: string; latest: string } | null {
+): { earliest: string; latest: string; min_days: number; max_days: number } | null {
   const idx = PUBLIC_STATUS_FORWARD.indexOf(currentStatus);
   // Skip terminal/unknown statuses (and `placed`, which is already done).
   if (idx < 0 || currentStatus === 'placed') return null;
@@ -241,6 +248,8 @@ function computeCompletionWindow(
   return {
     earliest: new Date(now + minDaysLeft * 86_400_000).toISOString(),
     latest:   new Date(now + maxDaysLeft * 86_400_000).toISOString(),
+    min_days: minDaysLeft,
+    max_days: maxDaysLeft,
   };
 }
 
@@ -481,6 +490,15 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
 
     const progressPercent = computeProgressPercent(phase.step, row.status, daysInPhase);
 
+    // One computation drives two response fields: the ISO date pair the page
+    // renders as a calendar-markable window, and the canonical integer day
+    // range the planned reminder email / PDF can quote ("about 6–10 weeks to
+    // placement") without re-deriving from the dates.
+    const completionWindow = computeCompletionWindow(row.status, daysInPhase);
+    const estimatedDaysRemaining = completionWindow
+      ? { min_days: completionWindow.min_days, max_days: completionWindow.max_days }
+      : null;
+
     // Expected start date of the *next* phase — a near-term, single-date
     // anchor that complements the v1.11 cumulative completion window (which
     // is the far end of the same calculation). Computed as now + however much
@@ -636,7 +654,10 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         days_in_phase: daysInPhase,
         days_since_last_activity: daysSinceLastActivity,
         phase_duration_typical: PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null,
-        estimated_completion_window: computeCompletionWindow(row.status, daysInPhase),
+        estimated_completion_window: completionWindow
+          ? { earliest: completionWindow.earliest, latest: completionWindow.latest }
+          : null,
+        estimated_days_remaining: estimatedDaysRemaining,
         is_stalled: isStalled,
         opened_at: row.created_at,
         engagement_age_days: engagementAgeDays,

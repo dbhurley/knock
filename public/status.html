@@ -237,7 +237,7 @@
                     <div class="phase-current">Current phase</div>
                     <div class="phase-label" id="phase-label"></div>
                     <div class="phase-explainer" id="phase-explainer" style="display:none"></div>
-                    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+                    <div class="progress-track" id="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill" id="progress-fill"></div></div>
                     <div class="progress-meta" id="progress-meta"></div>
                     <div class="phase-pacing" id="phase-pacing" style="display:none"></div>
                     <div class="completion-window" id="completion-window" style="display:none"></div>
@@ -521,7 +521,16 @@
                     : (d.phase_total ? Math.max(4, Math.round((d.phase_step / d.phase_total) * 100)) : 0);
                 document.getElementById('progress-fill').style.width = pct + '%';
                 progressMetaEl.textContent = 'Step ' + d.phase_step + ' of ' + d.phase_total;
-                if (trackEl) trackEl.style.display = '';
+                // Announce progress to assistive tech — a committee member on a
+                // screen reader hears "Sourcing candidates, step 3 of 8, 31%"
+                // instead of a silent bar. aria-valuenow tracks the same fill %.
+                if (trackEl) {
+                    trackEl.setAttribute('aria-valuenow', String(pct));
+                    trackEl.setAttribute('aria-valuetext',
+                        (d.phase_label || 'In progress') + ' — step ' + d.phase_step +
+                        ' of ' + d.phase_total + ', ' + pct + '% complete');
+                    trackEl.style.display = '';
+                }
                 progressMetaEl.style.display = '';
             } else {
                 if (trackEl) trackEl.style.display = 'none';
@@ -605,6 +614,29 @@
                 cwEl.innerHTML = (earliest === latest)
                     ? 'Typical placement window: <strong>' + earliest + '</strong>'
                     : 'Typical placement window: <strong>' + earliest + ' – ' + latest + '</strong>';
+                // Append the canonical day range the API supplies as a glanceable
+                // "(about 6–10 weeks out)" so the absolute dates also read as a
+                // relative horizon — and the same integers the reminder email
+                // quotes stay the single source of truth. Weeks for readability
+                // once past a fortnight; days when the window is close in.
+                const edr = d.estimated_days_remaining;
+                if (edr && typeof edr.min_days === 'number' && typeof edr.max_days === 'number'
+                    && edr.max_days > 0) {
+                    const fmtSpan = function (lo, hi) {
+                        if (hi >= 14) {
+                            const wLo = Math.max(1, Math.round(lo / 7));
+                            const wHi = Math.max(wLo, Math.round(hi / 7));
+                            return wLo === wHi
+                                ? '~' + wHi + ' week' + (wHi === 1 ? '' : 's')
+                                : wLo + '–' + wHi + ' weeks';
+                        }
+                        return lo === hi
+                            ? '~' + hi + ' day' + (hi === 1 ? '' : 's')
+                            : lo + '–' + hi + ' days';
+                    };
+                    cwEl.innerHTML += ' <span class="typical">(about ' +
+                        fmtSpan(edr.min_days, edr.max_days) + ' out)</span>';
+                }
                 cwEl.style.display = 'block';
             } else {
                 cwEl.style.display = 'none';
@@ -1073,6 +1105,22 @@
                     }
                     journeyList.appendChild(li);
                 });
+                // Surface a phases-complete count on the collapsed summary so it
+                // carries a fresh, monotonically-growing number every visit
+                // ("The full search journey · 3 of 8 phases complete") rather
+                // than the same static label until the section is expanded.
+                // Completed phases are those strictly before the current step.
+                const summaryEl = document.getElementById('journey-summary');
+                if (summaryEl) {
+                    // Completed = phases strictly before the current step. On a
+                    // successful placement the final phase is itself complete,
+                    // so count the whole journey.
+                    const done = d.status === 'placed'
+                        ? FORWARD_PHASES.length
+                        : Math.max(0, d.phase_step - 1);
+                    summaryEl.textContent = 'The full search journey · ' +
+                        done + ' of ' + FORWARD_PHASES.length + ' phases complete';
+                }
                 journeyDetails.style.display = 'block';
             } else {
                 journeyDetails.style.display = 'none';
