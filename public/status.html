@@ -480,9 +480,21 @@
             }
 
             // Tab title carries the phase + ref so a pinned tab is a useful
-            // reminder of where the search stands. Restored on form reset.
+            // reminder of where the search stands. For an in-flight progressing
+            // phase it also carries the step count ("KNK-2026-001 · Sourcing
+            // (3/8)"), so a pinned tab shows visible *movement* between visits —
+            // the same compounding return-visit value as the journey summary's
+            // phases-complete count, but at a glance without opening the tab.
+            // Suppressed on negative-terminal states (cancelled/closed_no_fill,
+            // which carry phase_step 8) so the tab never reads a misleading
+            // "(8/8)" on a search that closed without a placement. Restored on
+            // form reset.
             if (d.search_number && d.phase_label) {
-                document.title = d.search_number + ' · ' + d.phase_label + ' | Knock';
+                const negTerminal = ['cancelled', 'closed_no_fill'].indexOf(d.status) !== -1;
+                const stepBit = (!negTerminal && typeof d.phase_step === 'number' && d.phase_step > 0)
+                    ? ' (' + d.phase_step + '/' + (d.phase_total || 8) + ')'
+                    : '';
+                document.title = d.search_number + ' · ' + d.phase_label + stepBit + ' | Knock';
             }
 
             const explainerEl = document.getElementById('phase-explainer');
@@ -772,7 +784,14 @@
                     let label = n === 0
                         ? 'Quiet stretch — no updates this week'
                         : n + ' update' + (n === 1 ? '' : 's') + ' this week';
-                    if (n > 0 && typeof d.days_since_last_activity === 'number') {
+                    // Anchor the row with the exact age of the last update
+                    // whenever one exists — including the quiet (n === 0) case.
+                    // "No updates this week · latest 9 days ago" is far more
+                    // honest than the bare "Quiet stretch" line: it tells the
+                    // client the pipeline isn't dead, just between beats. When
+                    // there's never been any public activity (day-1 searches),
+                    // days_since_last_activity is null, so the bare line stands.
+                    if (typeof d.days_since_last_activity === 'number') {
                         const dsl = d.days_since_last_activity;
                         const recency = dsl === 0
                             ? 'latest today'
@@ -1112,12 +1131,17 @@
                 // Completed phases are those strictly before the current step.
                 const summaryEl = document.getElementById('journey-summary');
                 if (summaryEl) {
-                    // Completed = phases strictly before the current step. On a
-                    // successful placement the final phase is itself complete,
-                    // so count the whole journey.
-                    const done = d.status === 'placed'
-                        ? FORWARD_PHASES.length
-                        : Math.max(0, d.phase_step - 1);
+                    // Prefer the API's canonical phases_completed (one source of
+                    // truth, shared with the planned reminder email / PDF) and
+                    // fall back to local math on older API versions. Completed =
+                    // phases strictly before the current step; on a successful
+                    // placement the final phase is itself complete, so count the
+                    // whole journey.
+                    const done = (typeof d.phases_completed === 'number')
+                        ? d.phases_completed
+                        : (d.status === 'placed'
+                            ? FORWARD_PHASES.length
+                            : Math.max(0, d.phase_step - 1));
                     summaryEl.textContent = 'The full search journey · ' +
                         done + ' of ' + FORWARD_PHASES.length + ' phases complete';
                 }

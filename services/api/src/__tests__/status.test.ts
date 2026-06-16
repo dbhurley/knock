@@ -380,6 +380,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak phases_completed on 404 (no progress hints to anonymous callers)', async () => {
+    // phases_completed is the canonical count of finished phases — the same
+    // calculation the journey summary renders as "3 of 8 phases complete".
+    // The integer is keyed by the current phase (completed = step - 1), so
+    // observing it on the 404 path would let an anonymous caller infer both
+    // that the search exists AND how far along it is. Belongs only on the
+    // verified success shape, like phase_step and phases_completed's sibling
+    // canonical integers (engagement_age_days, days_until_next_milestone).
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-983',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('phases_completed' in body), 'phases_completed must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".

@@ -528,6 +528,26 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Canonical server-computed count of phases the search has finished.
+    // The status page already derives this client-side for its collapsed
+    // journey summary ("3 of 8 phases complete"), but surfacing it from the
+    // API makes it the single source of truth — the planned status-change
+    // reminder email (roadmap #4) and future PDF status reports can quote the
+    // same "3 of 8 phases complete" the page shows instead of re-deriving it
+    // from phase_step. Same one-source-of-truth rationale as engagement_age_days
+    // and days_until_next_milestone. A successful placement counts the whole
+    // journey; for an in-flight progressing phase it's the steps strictly
+    // before the current one. Null for non-progressing/negative-terminal
+    // states (on_hold, cancelled, closed_no_fill), where "N phases complete"
+    // would misrepresent a pause or a close-without-placement as progress —
+    // the status page hides the journey overview for those states anyway.
+    let phasesCompleted: number | null = null;
+    if (row.status === 'placed') {
+      phasesCompleted = PUBLIC_STATUS_FORWARD.length; // 8 — journey fully complete
+    } else if (PUBLIC_STATUS_FORWARD.includes(row.status)) {
+      phasesCompleted = Math.max(0, phase.step - 1);
+    }
+
     // Canonical server-computed engagement length (days since the search
     // opened). The status page already derives this client-side for its
     // "(11 days ago)" tag, but surfacing it from the API makes it the single
@@ -644,6 +664,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_explainer: PUBLIC_STATUS_EXPLAINERS[row.status] ?? null,
         phase_step: phase.step,
         phase_total: 8,
+        phases_completed: phasesCompleted,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
         next_milestone_eta: nextMilestoneEta,
