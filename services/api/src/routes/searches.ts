@@ -623,6 +623,15 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // A long engagement reads as a story with concrete durations, not just a
     // list of dates. Nested inside phase_history, so the existing 404-leak
     // test for phase_history already covers it.
+    //
+    // Each entry also carries the canonical human `label` for its phase
+    // (sourced from PUBLIC_STATUS_PHASES, the same map that drives phase_label).
+    // Same one-source-of-truth rationale as engagement_age_days / phases_completed:
+    // the planned status-change reminder email and future PDF status reports can
+    // quote real dated milestones — "Sourcing ran Apr 22 → May 4 · 12 days" —
+    // without re-deriving the label from the raw status code. The status page
+    // already shows labels from its own forward-phase list, so this is purely a
+    // pre-pave for those other surfaces.
     const phaseHistory = phaseHistorySorted.map((entry, i) => {
       const next = phaseHistorySorted[i + 1];
       let durationDays: number | null = null;
@@ -630,7 +639,12 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         const ms = new Date(next.entered_at).getTime() - new Date(entry.entered_at).getTime();
         if (!Number.isNaN(ms) && ms >= 0) durationDays = Math.floor(ms / 86_400_000);
       }
-      return { phase: entry.phase, entered_at: entry.entered_at, duration_days: durationDays };
+      return {
+        phase: entry.phase,
+        label: PUBLIC_STATUS_PHASES[entry.phase]?.label ?? entry.phase,
+        entered_at: entry.entered_at,
+        duration_days: durationDays,
+      };
     });
 
     // Post-placement 90-day follow-up window. Only populated when the
@@ -653,9 +667,21 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Canonical deep-link back to this status surface. POST /api/v1/intake
+    // already returns this exact shape (PUBLIC_BASE_URL + /status?ref=…); echoing
+    // it here makes the status response itself a single source of truth for the
+    // link, so the intake success screen, the status page, and the planned
+    // status-change reminder email / PDF all quote the same string rather than
+    // each rebuilding it. Same one-source-of-truth rationale as engagement_age_days
+    // and phases_completed. Lives on the verified success shape only — never on
+    // the 404 path — to keep the response envelope uniform with every other field.
+    const baseUrl = (process.env.PUBLIC_BASE_URL ?? 'https://askknock.com').replace(/\/+$/, '');
+    const statusUrl = `${baseUrl}/status?ref=${encodeURIComponent(row.search_number)}`;
+
     reply.send({
       data: {
         search_number: row.search_number,
+        status_url: statusUrl,
         position_title: row.position_title,
         school_name: row.school_name,
         school_location: [row.school_city, row.school_state].filter(Boolean).join(', ') || null,

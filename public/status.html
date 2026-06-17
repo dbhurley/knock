@@ -184,6 +184,7 @@
         .journey-list .jl-typical { font-size: 0.72rem; color: #aaa; margin-top: 0.15rem; }
         .journey-list .jl-when { font-size: 0.72rem; color: #b8860b; margin-top: 0.15rem; font-weight: 600; }
         .journey-list li.upcoming .jl-when { display: none; }
+        .journey-list .jl-pace { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 8px; background: #f3ead0; color: #8a6d1f; font-size: 0.68rem; font-weight: 600; vertical-align: middle; }
 
         @media print {
             header, footer, .refresh-btn, .share-btn, .email-btn, .auto-refresh-hint, .help, #status-form, .new-banner, .empty-state-card, .cal-link, .fetched-at { display: none !important; }
@@ -1116,10 +1117,28 @@
                         // client can read against the "Typically …" benchmark
                         // shown just above. Only completed phases carry a
                         // duration — the current phase is still running.
+                        let onPace = false;
                         if (cls === 'done' && typeof hist.duration_days === 'number' && hist.duration_days >= 0) {
                             whText += ' · ' + hist.duration_days + ' day' + (hist.duration_days === 1 ? '' : 's');
+                            // Compare the actual elapsed days against the phase's
+                            // typical-max benchmark (parsed from the FORWARD_PHASES
+                            // "14–28 days" string). A completed phase that landed
+                            // within its typical window earns a positive "on pace"
+                            // tag — turning the durational archive into a
+                            // comparative one and rewarding journey-archive opens
+                            // with a fresh, encouraging read. Over-typical phases
+                            // get no tag (stay neutral) so the archive never reads
+                            // as punitive on the rows a client revisits most.
+                            const m = (p.typical || '').match(/(\d+)\s*[–-]\s*(\d+)/);
+                            if (m && hist.duration_days <= parseInt(m[2], 10)) onPace = true;
                         }
                         wh.textContent = whText;
+                        if (onPace) {
+                            const pace = document.createElement('span');
+                            pace.className = 'jl-pace';
+                            pace.textContent = 'on pace';
+                            wh.appendChild(pace);
+                        }
                         li.appendChild(wh);
                     }
                     journeyList.appendChild(li);

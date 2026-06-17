@@ -402,6 +402,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak status_url on 404 (verified success shape only)', async () => {
+    // status_url is the canonical deep-link back to the status surface,
+    // echoed from POST /api/v1/intake so the success screen, the page, and
+    // the planned reminder email share one string. It belongs only on the
+    // verified success shape: a 404 must stay a flat error envelope so the
+    // response never confirms a (ref, email) pair by handing back a
+    // ready-made link to the search it didn't disclose.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-982',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('status_url' in body), 'status_url must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
