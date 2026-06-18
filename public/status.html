@@ -1120,17 +1120,25 @@
                         let onPace = false;
                         if (cls === 'done' && typeof hist.duration_days === 'number' && hist.duration_days >= 0) {
                             whText += ' · ' + hist.duration_days + ' day' + (hist.duration_days === 1 ? '' : 's');
-                            // Compare the actual elapsed days against the phase's
-                            // typical-max benchmark (parsed from the FORWARD_PHASES
-                            // "14–28 days" string). A completed phase that landed
-                            // within its typical window earns a positive "on pace"
-                            // tag — turning the durational archive into a
-                            // comparative one and rewarding journey-archive opens
-                            // with a fresh, encouraging read. Over-typical phases
-                            // get no tag (stay neutral) so the archive never reads
-                            // as punitive on the rows a client revisits most.
-                            const m = (p.typical || '').match(/(\d+)\s*[–-]\s*(\d+)/);
-                            if (m && hist.duration_days <= parseInt(m[2], 10)) onPace = true;
+                            // A completed phase that landed within its typical
+                            // window earns a positive "on pace" tag — turning the
+                            // durational archive into a comparative one and
+                            // rewarding journey-archive opens with a fresh,
+                            // encouraging read. Over-typical phases get no tag
+                            // (stay neutral) so the archive never reads as
+                            // punitive on the rows a client revisits most.
+                            //
+                            // Prefer the API's canonical on_pace flag (one source
+                            // of truth, shared with the planned reminder email /
+                            // PDF). Fall back to parsing the typical-max benchmark
+                            // from the FORWARD_PHASES "14–28 days" string on older
+                            // API versions that don't return the field yet.
+                            if (typeof hist.on_pace === 'boolean') {
+                                onPace = hist.on_pace;
+                            } else {
+                                const m = (p.typical || '').match(/(\d+)\s*[–-]\s*(\d+)/);
+                                if (m && hist.duration_days <= parseInt(m[2], 10)) onPace = true;
+                            }
                         }
                         wh.textContent = whText;
                         if (onPace) {

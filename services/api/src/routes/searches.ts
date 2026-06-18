@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query, queryOne, execute } from '../lib/db.js';
+import { statusUrlFor } from '../lib/urls.js';
 import type { PaginatedResponse, Search, SearchCandidate } from '../types/index.js';
 
 // ─── Validation Schemas ────────────────────────────────────────────────────
@@ -221,6 +222,7 @@ function computeProgressPercent(
 function computeCompletionWindow(
   currentStatus: string,
   daysInPhase: number | null,
+  nowMs: number,
 ): { earliest: string; latest: string; min_days: number; max_days: number } | null {
   const idx = PUBLIC_STATUS_FORWARD.indexOf(currentStatus);
   // Skip terminal/unknown statuses (and `placed`, which is already done).
@@ -244,10 +246,9 @@ function computeCompletionWindow(
       maxDaysLeft += span.max_days;
     }
   }
-  const now = Date.now();
   return {
-    earliest: new Date(now + minDaysLeft * 86_400_000).toISOString(),
-    latest:   new Date(now + maxDaysLeft * 86_400_000).toISOString(),
+    earliest: new Date(nowMs + minDaysLeft * 86_400_000).toISOString(),
+    latest:   new Date(nowMs + maxDaysLeft * 86_400_000).toISOString(),
     min_days: minDaysLeft,
     max_days: maxDaysLeft,
   };
@@ -344,6 +345,16 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         message: 'No search matches that reference number and email. Double-check both, or reply to your last note from Janet.',
       });
     }
+
+    // One request-time instant drives every relative-time field below
+    // (days_in_phase, next_milestone_eta, estimated_completion_window,
+    // engagement_age_days, days_since_last_activity, the placement countdown).
+    // Sharing a single `nowMs` means these fields are computed against the same
+    // moment, so a request that happens to straddle a UTC day boundary can't
+    // hand back internally-inconsistent day counts — the same "can never drift"
+    // discipline the estimated_completion_window / estimated_days_remaining pair
+    // already follows by sharing one computeCompletionWindow() call.
+    const nowMs = Date.now();
 
     const phase = PUBLIC_STATUS_PHASES[row.status] ?? { label: row.status, step: 0 };
 
@@ -455,7 +466,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // still in a progressing phase (terminal/non-progressing → null).
     let daysInPhase: number | null = null;
     if (row.status_changed_at && PUBLIC_STATUS_FORWARD.includes(row.status) && row.status !== 'placed') {
-      const ms = Date.now() - new Date(row.status_changed_at).getTime();
+      const ms = nowMs - new Date(row.status_changed_at).getTime();
       if (!Number.isNaN(ms) && ms >= 0) {
         daysInPhase = Math.floor(ms / 86_400_000);
       }
@@ -470,7 +481,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // public-visible activities yet (typical on day-1 searches).
     let daysSinceLastActivity: number | null = null;
     if (latest?.created_at) {
-      const ms = Date.now() - new Date(latest.created_at).getTime();
+      const ms = nowMs - new Date(latest.created_at).getTime();
       if (!Number.isNaN(ms) && ms >= 0) {
         daysSinceLastActivity = Math.floor(ms / 86_400_000);
       }
@@ -494,7 +505,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // renders as a calendar-markable window, and the canonical integer day
     // range the planned reminder email / PDF can quote ("about 6–10 weeks to
     // placement") without re-deriving from the dates.
-    const completionWindow = computeCompletionWindow(row.status, daysInPhase);
+    const completionWindow = computeCompletionWindow(row.status, daysInPhase, nowMs);
     const estimatedDaysRemaining = completionWindow
       ? { min_days: completionWindow.min_days, max_days: completionWindow.max_days }
       : null;
@@ -523,7 +534,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
       if (typical) {
         const remaining = Math.max(0, typical.max_days - Math.max(0, daysInPhase ?? 0));
-        nextMilestoneEta = new Date(Date.now() + remaining * 86_400_000).toISOString();
+        nextMilestoneEta = new Date(nowMs + remaining * 86_400_000).toISOString();
         daysUntilNextMilestone = remaining;
       }
     }
@@ -558,7 +569,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // phase_explainer. Null when created_at is missing or unparseable.
     let engagementAgeDays: number | null = null;
     if (row.created_at) {
-      const ms = Date.now() - new Date(row.created_at).getTime();
+      const ms = nowMs - new Date(row.created_at).getTime();
       if (!Number.isNaN(ms) && ms >= 0) engagementAgeDays = Math.floor(ms / 86_400_000);
     }
 
@@ -632,18 +643,32 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // without re-deriving the label from the raw status code. The status page
     // already shows labels from its own forward-phase list, so this is purely a
     // pre-pave for those other surfaces.
+    // Each completed phase also carries a canonical `on_pace` flag: true when
+    // its actual elapsed days landed at or within the phase's typical-max
+    // benchmark from PUBLIC_STATUS_TYPICAL_DURATION. The status page's
+    // durational journey archive previously derived this client-side by
+    // regex-parsing the "14–28 days" benchmark string it renders — fragile and
+    // duplicated. Surfacing the boolean server-side makes it one source of
+    // truth (same rationale as `label` and `phases_completed`): the planned
+    // reminder email / PDF can quote "Sourcing wrapped on pace · 12 days"
+    // without re-deriving the benchmark. Null for the current/last phase (still
+    // running, no duration yet) and for any phase without a typical duration.
     const phaseHistory = phaseHistorySorted.map((entry, i) => {
       const next = phaseHistorySorted[i + 1];
       let durationDays: number | null = null;
+      let onPace: boolean | null = null;
       if (next) {
         const ms = new Date(next.entered_at).getTime() - new Date(entry.entered_at).getTime();
         if (!Number.isNaN(ms) && ms >= 0) durationDays = Math.floor(ms / 86_400_000);
+        const typical = PUBLIC_STATUS_TYPICAL_DURATION[entry.phase];
+        if (typical && durationDays !== null) onPace = durationDays <= typical.max_days;
       }
       return {
         phase: entry.phase,
         label: PUBLIC_STATUS_PHASES[entry.phase]?.label ?? entry.phase,
         entered_at: entry.entered_at,
         duration_days: durationDays,
+        on_pace: onPace,
       };
     });
 
@@ -662,7 +687,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         placementFollowupUntil = new Date(untilTs).toISOString();
         placementFollowupDaysRemaining = Math.max(
           0,
-          Math.ceil((untilTs - Date.now()) / 86_400_000),
+          Math.ceil((untilTs - nowMs) / 86_400_000),
         );
       }
     }
@@ -675,8 +700,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // each rebuilding it. Same one-source-of-truth rationale as engagement_age_days
     // and phases_completed. Lives on the verified success shape only — never on
     // the 404 path — to keep the response envelope uniform with every other field.
-    const baseUrl = (process.env.PUBLIC_BASE_URL ?? 'https://askknock.com').replace(/\/+$/, '');
-    const statusUrl = `${baseUrl}/status?ref=${encodeURIComponent(row.search_number)}`;
+    // Built by the shared statusUrlFor() helper so the status response and the
+    // intake response can never drift on the link format.
+    const statusUrl = statusUrlFor(row.search_number);
 
     reply.send({
       data: {

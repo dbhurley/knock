@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { query, queryOne, execute } from '../lib/db.js';
+import { statusUrlFor } from '../lib/urls.js';
 
 interface IntakeBody {
   school_name: string;
@@ -161,10 +162,10 @@ export default async function intakeRoutes(app: FastifyInstance): Promise<void> 
     }
 
     // Canonical status URL — one source of truth for the success screen,
-    // welcome email, and the planned status-change reminder emails. Override
-    // with PUBLIC_BASE_URL if the public site ever moves.
-    const baseUrl = (process.env.PUBLIC_BASE_URL ?? 'https://askknock.com').replace(/\/+$/, '');
-    const statusUrl = `${baseUrl}/status?ref=${encodeURIComponent(searchNumber)}`;
+    // welcome email, and the planned status-change reminder emails. Built by
+    // the shared statusUrlFor() helper so this route and the status response
+    // can never drift on the link format.
+    const statusUrl = statusUrlFor(searchNumber);
 
     return reply.code(201).send({
       success: true,
