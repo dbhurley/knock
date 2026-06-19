@@ -298,6 +298,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak current_phase_on_pace on 404 (no pacing-verdict hints to anonymous callers)', async () => {
+    // current_phase_on_pace is the server-computed boolean verdict on whether
+    // the current phase is still within its typical-max benchmark. Like the
+    // phase_duration_typical it derives from, the flag is keyed by the current
+    // phase, so observing it on the 404 path would let an anonymous caller
+    // infer both that the search exists AND something about its pacing.
+    // Belongs only on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-981',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('current_phase_on_pace' in body), 'current_phase_on_pace must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak phase_history on 404 (no transition-archive hints to anonymous callers)', async () => {
     // phase_history is the API's per-phase entry-date archive (one entry per
     // phase the search has been in, ordered ascending). The array must only

@@ -304,6 +304,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // FILTER subquery is cheap and atomic, so the three numbers are always
     // mutually consistent with each other and with the redacted timeline above.
     const row = await queryOne<{
+      id: string;
       search_number: string;
       position_title: string;
       status: string;
@@ -319,7 +320,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       school_state: string | null;
       client_contact_email: string | null;
     }>(
-      `SELECT s.search_number, s.position_title, s.status, s.status_changed_at,
+      `SELECT s.id, s.search_number, s.position_title, s.status, s.status_changed_at,
               s.created_at, s.target_start_date, s.search_urgency,
               (SELECT COUNT(*) FROM search_candidates WHERE search_id = s.id)::int
                 AS candidates_identified,
@@ -382,11 +383,11 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     }>(
       `SELECT activity_type, description, created_at
        FROM search_activities
-       WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
+       WHERE search_id = $1
          AND activity_type = ANY($2::text[])
        ORDER BY created_at DESC
        LIMIT 5`,
-      [row.search_number, activityTypes],
+      [row.id, activityTypes],
     );
 
     const latest = activities[0] ?? null;
@@ -418,9 +419,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
                             AND created_at <  NOW() - INTERVAL '7 days')::text AS prev_7d,
          COUNT(*)::text AS total
        FROM search_activities
-       WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
+       WHERE search_id = $1
          AND activity_type = ANY($2::text[])`,
-      [row.search_number, activityTypes],
+      [row.id, activityTypes],
     );
     const activityCountLast7d = parseInt(velocityRow?.last_7d ?? '0', 10);
     const activityCountPrev7d = parseInt(velocityRow?.prev_7d ?? '0', 10);
@@ -437,10 +438,10 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     const breakdownRows = await query<{ activity_type: string; n: string }>(
       `SELECT activity_type, COUNT(*)::text AS n
        FROM search_activities
-       WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
+       WHERE search_id = $1
          AND activity_type = ANY($2::text[])
        GROUP BY activity_type`,
-      [row.search_number, activityTypes],
+      [row.id, activityTypes],
     );
     const activityBreakdown: Record<string, number> = {};
     for (const t of PUBLIC_ACTIVITY_TYPES) activityBreakdown[t] = 0;
@@ -498,6 +499,27 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       && activityCountLast7d === 0
       && typeof daysInPhase === 'number'
       && daysInPhase >= STALL_PHASE_DAYS;
+
+    // Canonical "is the current phase still on pace?" flag — the positive
+    // companion to is_stalled, mirroring the per-completed-phase on_pace field
+    // in phase_history (v1.23). Completed phases already earn an "on pace" tag
+    // on the journey archive, but the *current* in-flight phase — the one a
+    // return visitor cares about most — had no canonical comparative signal:
+    // the status page rendered "18 days in phase (typically 14–28 days)" and
+    // left the client to do the comparison. true when the current progressing
+    // phase's days_in_phase is at or within its typical-max benchmark, false
+    // once it slips past, null for terminal/non-progressing/placed phases or
+    // any phase without a typical duration (same null-semantics as the
+    // phase_history on_pace flag). One source of truth: the planned reminder
+    // email / PDF (roadmap #4) can quote "Sourcing is on pace — 18 of a
+    // typical 14–28 days" off this boolean instead of re-deriving the benchmark.
+    let currentPhaseOnPace: boolean | null = null;
+    if (typeof daysInPhase === 'number'
+        && PUBLIC_STATUS_FORWARD.includes(row.status)
+        && row.status !== 'placed') {
+      const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
+      if (typical) currentPhaseOnPace = daysInPhase <= typical.max_days;
+    }
 
     const progressPercent = computeProgressPercent(phase.step, row.status, daysInPhase);
 
@@ -599,11 +621,11 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
               (metadata->>'to')   AS to_phase,
               created_at          AS entered_at
        FROM search_activities
-       WHERE search_id = (SELECT id FROM searches WHERE search_number = $1)
+       WHERE search_id = $1
          AND activity_type = 'status_change'
          AND metadata ? 'to'
        ORDER BY created_at ASC`,
-      [row.search_number],
+      [row.id],
     );
     // Map (phase → first-entered-at). Same phase visited twice in a row
     // (e.g. paused → resumed) collapses to the first arrival so the journey
@@ -727,6 +749,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         days_in_phase: daysInPhase,
         days_since_last_activity: daysSinceLastActivity,
         phase_duration_typical: PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null,
+        current_phase_on_pace: currentPhaseOnPace,
         estimated_completion_window: completionWindow
           ? { earliest: completionWindow.earliest, latest: completionWindow.latest }
           : null,
