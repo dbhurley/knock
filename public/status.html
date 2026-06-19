@@ -117,6 +117,7 @@
         .next-preview .typical { color: #b8860b; font-weight: 600; }
 
         .phase-pacing { font-size: 0.78rem; color: #888; margin-top: 0.3rem; }
+        .phase-pacing .pace-tag { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 8px; background: #f3ead0; color: #8a6d1f; font-size: 0.68rem; font-weight: 600; vertical-align: middle; }
         .completion-window { font-size: 0.78rem; color: #6a5b1f; margin-top: 0.25rem; }
         .completion-window strong { color: #b8860b; font-weight: 600; }
 
@@ -414,7 +415,11 @@
             if (min < 60) return min + ' min ago';
             const hr = Math.round(min / 60);
             if (hr < 24) return hr + ' hr ago';
-            const d = Math.round(hr / 24);
+            // Floor the day count so the timeline's "X days ago" never disagrees
+            // by one with the server's days_since_last_activity recency anchor
+            // (which floors) — and matches the conventional relative-time read
+            // (a 2.6-day-old item is "2 days ago", not rounded up to "3").
+            const d = Math.floor(hr / 24);
             if (d < 7) return d + ' day' + (d === 1 ? '' : 's') + ' ago';
             return fmtDate(iso);
         }
@@ -675,6 +680,20 @@
                     line += ' (typically ' + min + '–' + max + ' days)';
                 }
                 pacingEl.textContent = line;
+                // Positive "on pace" tag on the current phase, mirroring the
+                // journey archive's tag on completed phases. Prefer the API's
+                // canonical current_phase_on_pace flag (one source of truth,
+                // shared with the planned reminder email / PDF); positive-only
+                // by design, so an over-typical phase shows the bare day count
+                // with no tag rather than reading as punitive on the row a
+                // client revisits most. is_stalled already carries the negative
+                // signal when a phase has truly gone quiet.
+                if (d.current_phase_on_pace === true && d.is_stalled !== true) {
+                    const pace = document.createElement('span');
+                    pace.className = 'pace-tag';
+                    pace.textContent = 'on pace';
+                    pacingEl.appendChild(pace);
+                }
                 pacingEl.style.display = 'block';
             } else {
                 pacingEl.style.display = 'none';
