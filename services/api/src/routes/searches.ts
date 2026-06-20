@@ -409,43 +409,50 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // (days [-14, -7) relative to now). Pairs with the current-week count to
     // give the page a real week-over-week trend signal: "5 updates this week
     // · up from 2" creates a fresh visible signal each time the tempo shifts,
-    // even when the weekly absolute count happens to be unchanged. Computed
-    // in the same query as the other two via a second FILTER clause, so all
-    // three numbers stay atomically consistent.
-    const velocityRow = await queryOne<{ last_7d: string; prev_7d: string; total: string }>(
-      `SELECT
-         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::text AS last_7d,
-         COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '14 days'
-                            AND created_at <  NOW() - INTERVAL '7 days')::text AS prev_7d,
-         COUNT(*)::text AS total
-       FROM search_activities
-       WHERE search_id = $1
-         AND activity_type = ANY($2::text[])`,
-      [row.id, activityTypes],
-    );
-    const activityCountLast7d = parseInt(velocityRow?.last_7d ?? '0', 10);
-    const activityCountPrev7d = parseInt(velocityRow?.prev_7d ?? '0', 10);
-    const activityCountTotal = parseInt(velocityRow?.total ?? '0', 10);
-
-    // Cumulative breakdown of public-visible activities by type. Tells the
-    // engagement story in a single compact strip the status page can render
-    // as "8 candidates sourced · 3 presented · 2 interviewing" — a second
-    // numeric surface (alongside the cumulative + weekly counts) that grows
-    // visibly across the engagement and gives every return visit something
-    // concrete to scan. Same PUBLIC_ACTIVITY_TYPES filter as the other counts,
-    // so the breakdown can never reflect internal/commercial rows. Types with
-    // a zero count are still included so the frontend can decide what to show.
-    const breakdownRows = await query<{ activity_type: string; n: string }>(
-      `SELECT activity_type, COUNT(*)::text AS n
+    // even when the weekly absolute count happens to be unchanged.
+    //
+    // The per-type breakdown, the cumulative total, and both 7-day windows are
+    // all derived from a single GROUP BY scan of the same rows: each group row
+    // carries its own count plus windowed FILTER counts, and the totals are the
+    // column sums in JS. One round-trip instead of two, and — because the
+    // breakdown total is literally the sum of the per-type counts — every number
+    // on the Activity surface stays mutually consistent by construction. The
+    // window boundaries are anchored to the request-time `nowMs` (passed as
+    // $3), not SQL NOW(), so they share the same instant as days_in_phase /
+    // days_since_last_activity and a request straddling a UTC day boundary can't
+    // hand back a 7-day count that disagrees with the recency anchor beside it.
+    const nowIso = new Date(nowMs).toISOString();
+    const breakdownRows = await query<{
+      activity_type: string;
+      n: string;
+      last_7d: string;
+      prev_7d: string;
+    }>(
+      `SELECT activity_type,
+              COUNT(*)::text AS n,
+              COUNT(*) FILTER (WHERE created_at >= $3::timestamptz - INTERVAL '7 days')::text AS last_7d,
+              COUNT(*) FILTER (WHERE created_at >= $3::timestamptz - INTERVAL '14 days'
+                                 AND created_at <  $3::timestamptz - INTERVAL '7 days')::text AS prev_7d
        FROM search_activities
        WHERE search_id = $1
          AND activity_type = ANY($2::text[])
        GROUP BY activity_type`,
-      [row.id, activityTypes],
+      [row.id, activityTypes, nowIso],
     );
+    // Per-type breakdown — types with a zero count are seeded so the frontend
+    // can decide what to show. The three scalar counts are the column sums.
     const activityBreakdown: Record<string, number> = {};
     for (const t of PUBLIC_ACTIVITY_TYPES) activityBreakdown[t] = 0;
-    for (const r of breakdownRows) activityBreakdown[r.activity_type] = parseInt(r.n, 10);
+    let activityCountTotal = 0;
+    let activityCountLast7d = 0;
+    let activityCountPrev7d = 0;
+    for (const r of breakdownRows) {
+      const n = parseInt(r.n, 10);
+      activityBreakdown[r.activity_type] = n;
+      activityCountTotal += n;
+      activityCountLast7d += parseInt(r.last_7d, 10);
+      activityCountPrev7d += parseInt(r.prev_7d, 10);
+    }
 
     // Categorical week-over-week trend. The thresholds are deliberately
     // generous: a "trend" only fires when both numbers are non-trivial AND

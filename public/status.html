@@ -413,13 +413,16 @@
             const min = Math.round(diff / 60000);
             if (min < 1) return 'just now';
             if (min < 60) return min + ' min ago';
-            const hr = Math.round(min / 60);
+            // Floor hours and derive days straight from raw ms (not from the
+            // rounded hour count). Rounding the hours first could push a
+            // 23.6-hour-old item up to "24 hr" and then to "1 day ago" while
+            // the server's floored days_since_last_activity still reads 0 — the
+            // exact off-by-one the v1.24 day-floor fix set out to eliminate.
+            // Computing both buckets by flooring the raw difference keeps the
+            // timeline and the server recency anchor in lockstep.
+            const hr = Math.floor(diff / 3600000);
             if (hr < 24) return hr + ' hr ago';
-            // Floor the day count so the timeline's "X days ago" never disagrees
-            // by one with the server's days_since_last_activity recency anchor
-            // (which floors) — and matches the conventional relative-time read
-            // (a 2.6-day-old item is "2 days ago", not rounded up to "3").
-            const d = Math.floor(hr / 24);
+            const d = Math.floor(diff / 86400000);
             if (d < 7) return d + ' day' + (d === 1 ? '' : 's') + ' ago';
             return fmtDate(iso);
         }
