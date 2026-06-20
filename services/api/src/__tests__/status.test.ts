@@ -444,6 +444,30 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak pipeline counts or recent_activities on 404 (no candidate-pipeline hints to anonymous callers)', async () => {
+    // candidates_identified/presented/interviewing and recent_activities are
+    // the most directly candidate-revealing fields on the success shape: the
+    // counts disclose how deep the pipeline is, and the timeline discloses
+    // dated engagement activity. Both belong only behind email verification —
+    // observing either on the 404 path would let an anonymous caller infer that
+    // a search exists and how much candidate work has happened on it.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-980',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('candidates_identified' in body), 'candidates_identified must not leak on 404');
+    assert.ok(!('candidates_presented' in body), 'candidates_presented must not leak on 404');
+    assert.ok(!('candidates_interviewing' in body), 'candidates_interviewing must not leak on 404');
+    assert.ok(!('recent_activities' in body), 'recent_activities must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
