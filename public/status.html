@@ -128,7 +128,6 @@
         .velocity-trend.accelerating { color: #b8860b; border-color: rgba(184,134,11,0.35); background: rgba(184,134,11,0.06); }
         .velocity-trend.cooling      { color: #888; border-color: #e0e0d8; background: #f6f6f2; }
         .velocity-trend.steady       { color: #888; border-color: #e0e0d8; background: transparent; font-weight: 400; }
-        .velocity-trend.quiet        { display: none; }
 
         .engagement-strip { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid #f5f0e8; font-size: 0.78rem; color: #6a5b1f; line-height: 1.6; display: none; }
         .engagement-strip.show { display: block; }
@@ -840,10 +839,18 @@
             velocityTrendEl.className = 'velocity-trend';
             velocityTrendEl.style.display = 'none';
             velocityTrendEl.removeAttribute('title');
+            velocityTrendEl.removeAttribute('aria-label');
             if (d.is_stalled !== true && typeof d.velocity_trend === 'string'
                 && typeof d.activity_count_prev_7d === 'number') {
                 const trend = d.velocity_trend;
                 const prev = d.activity_count_prev_7d;
+                // The chip's glyph + short text ("↑ up from 2") carries the
+                // signal visually; the same explanatory string is set as both
+                // the hover `title` and an explicit `aria-label` so a committee
+                // member on a screen reader gets the week-over-week momentum
+                // signal too (title alone is announced inconsistently). Extends
+                // the v1.20 progress-bar accessibility rationale to the chip.
+                let chipDesc = '';
                 if (trend === 'accelerating') {
                     velocityTrendEl.classList.add('accelerating');
                     // "up from 0" reads awkwardly on a search's first active
@@ -852,25 +859,36 @@
                     // burst of activity reads as a fresh start, not a delta.
                     if (prev === 0) {
                         velocityTrendEl.textContent = '↑ ramping up';
-                        velocityTrendEl.title = 'No updates the week before — the pipeline is ramping up';
+                        chipDesc = 'No updates the week before — the pipeline is ramping up';
                     } else {
                         velocityTrendEl.textContent = '↑ up from ' + prev;
-                        velocityTrendEl.title = prev + ' update' + (prev === 1 ? '' : 's')
+                        chipDesc = prev + ' update' + (prev === 1 ? '' : 's')
                             + ' the week before — pipeline is picking up';
                     }
                     velocityTrendEl.style.display = 'inline-block';
                 } else if (trend === 'cooling') {
                     velocityTrendEl.classList.add('cooling');
                     velocityTrendEl.textContent = '↓ down from ' + prev;
-                    velocityTrendEl.title = prev + ' update' + (prev === 1 ? '' : 's')
+                    chipDesc = prev + ' update' + (prev === 1 ? '' : 's')
                         + ' the week before';
                     velocityTrendEl.style.display = 'inline-block';
                 } else if (trend === 'steady') {
                     velocityTrendEl.classList.add('steady');
                     velocityTrendEl.textContent = 'steady';
-                    velocityTrendEl.title = prev + ' update' + (prev === 1 ? '' : 's')
-                        + ' the week before — tempo unchanged';
+                    // "tempo unchanged" only fits when there was actually a
+                    // comparable prior week. The ±2 dead-band can also classify
+                    // a 0→1 uptick as steady, where "0 updates the week before
+                    // — tempo unchanged" reads as a contradiction; use neutral
+                    // copy in that case.
+                    chipDesc = prev === 0
+                        ? 'A similar quiet tempo to the week before'
+                        : prev + ' update' + (prev === 1 ? '' : 's')
+                            + ' the week before — tempo unchanged';
                     velocityTrendEl.style.display = 'inline-block';
+                }
+                if (chipDesc) {
+                    velocityTrendEl.title = chipDesc;
+                    velocityTrendEl.setAttribute('aria-label', 'Activity trend: ' + chipDesc);
                 }
             }
 
@@ -905,8 +923,25 @@
                         const label = p.n === 1 ? p.spec.singular : p.spec.plural;
                         return '<span class="eg-pill"><strong>' + p.n + '</strong>' + label + '</span>';
                     }).join('');
+                    // The pills read as a glanceable strip for sighted clients,
+                    // but a screen reader would otherwise announce a bare run of
+                    // numbers and words with no framing. Mark the pills as a
+                    // single labeled image (role="img" + aria-label) so SR users
+                    // get the same one-line engagement summary ("Engagement so
+                    // far: 8 candidates sourced, 3 candidates presented") instead
+                    // — extending the v1.20 progress-bar accessibility rationale
+                    // to the breakdown strip. role="img" is set in JS (not the
+                    // static markup) so an empty pills container before first
+                    // render isn't announced as a label-less image.
+                    const srSummary = pills.map(function(p) {
+                        return p.n + ' ' + (p.n === 1 ? p.spec.singular : p.spec.plural);
+                    }).join(', ');
+                    engagementPills.setAttribute('role', 'img');
+                    engagementPills.setAttribute('aria-label', 'Engagement so far: ' + srSummary);
                     engagementStrip.classList.add('show');
                 } else {
+                    engagementPills.removeAttribute('role');
+                    engagementPills.removeAttribute('aria-label');
                     engagementStrip.classList.remove('show');
                 }
             } else {
@@ -1191,8 +1226,22 @@
                         : (d.status === 'placed'
                             ? FORWARD_PHASES.length
                             : Math.max(0, d.phase_step - 1));
-                    summaryEl.textContent = 'The full search journey · ' +
+                    let summaryText = 'The full search journey · ' +
                         done + ' of ' + FORWARD_PHASES.length + ' phases complete';
+                    // Append a glanceable pace tally so the collapsed summary
+                    // carries a fresh positive signal without the client
+                    // expanding the section. Prefer the API's canonical
+                    // phases_on_pace (one source of truth, shared with the
+                    // planned reminder email / PDF); read "all on pace" when
+                    // every completed phase landed within benchmark, otherwise
+                    // "N of M on pace". Suppressed until at least one phase has
+                    // completed, so a day-1 search doesn't read "0 of 0 on pace".
+                    if (typeof d.phases_on_pace === 'number' && done > 0) {
+                        summaryText += ' · ' + (d.phases_on_pace >= done
+                            ? 'all on pace'
+                            : d.phases_on_pace + ' of ' + done + ' on pace');
+                    }
+                    summaryEl.textContent = summaryText;
                 }
                 journeyDetails.style.display = 'block';
             } else {
