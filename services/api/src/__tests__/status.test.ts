@@ -423,6 +423,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak phases_on_pace on 404 (no pacing-tally hints to anonymous callers)', async () => {
+    // phases_on_pace is the canonical count of completed phases that landed on
+    // pace — the positive aggregate companion to phases_completed. Like every
+    // other progress signal it is keyed by how far the search has advanced, so
+    // observing it on the 404 path would let an anonymous caller infer both that
+    // the search exists AND how it has tracked against its benchmarks. Belongs
+    // only on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-979',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('phases_on_pace' in body), 'phases_on_pace must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak status_url on 404 (verified success shape only)', async () => {
     // status_url is the canonical deep-link back to the status surface,
     // echoed from POST /api/v1/intake so the success screen, the page, and

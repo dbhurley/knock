@@ -701,6 +701,28 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       };
     });
 
+    // Canonical count of *completed* phases that landed on pace — the positive
+    // aggregate companion to phases_completed (v1.21) and the per-entry on_pace
+    // flag (v1.23). The status page's journey archive already shows a gold "on
+    // pace" tag per completed phase, but the collapsed summary only carried the
+    // phases-complete count; a return visitor had to expand the section to see
+    // how the search was tracking against its benchmarks. Surfacing the count
+    // server-side makes it one source of truth: the journey summary can read
+    // "3 of 8 phases complete · all on pace" at a glance, and the planned
+    // reminder email / PDF (roadmap #4) can quote the same "3 of 3 completed
+    // phases on pace" without re-deriving it from phase_history. Null in the
+    // same non-progressing/negative-terminal states as phases_completed
+    // (on_hold, cancelled, closed_no_fill), where a pace tally would
+    // misrepresent a paused or closed-without-placement search as progress.
+    // PUBLIC_STATUS_FORWARD includes 'placed', so this covers both the
+    // in-flight progressing phases and a completed placement; the
+    // non-progressing/negative-terminal states (on_hold, cancelled,
+    // closed_no_fill) fall through to null, matching phases_completed.
+    let phasesOnPace: number | null = null;
+    if (PUBLIC_STATUS_FORWARD.includes(row.status)) {
+      phasesOnPace = phaseHistory.filter((h) => h.on_pace === true).length;
+    }
+
     // Post-placement 90-day follow-up window. Only populated when the
     // search has actually landed — terminal-but-not-placed statuses leave
     // these fields null so the status page can keep its placed-state
@@ -746,6 +768,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_step: phase.step,
         phase_total: 8,
         phases_completed: phasesCompleted,
+        phases_on_pace: phasesOnPace,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
         next_milestone_eta: nextMilestoneEta,
