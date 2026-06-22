@@ -640,12 +640,22 @@
                 // quotes stay the single source of truth. Weeks for readability
                 // once past a fortnight; days when the window is close in.
                 const edr = d.estimated_days_remaining;
+                const ewr = d.estimated_weeks_remaining;
                 if (edr && typeof edr.min_days === 'number' && typeof edr.max_days === 'number'
                     && edr.max_days > 0) {
                     const fmtSpan = function (lo, hi) {
                         if (hi >= 14) {
-                            const wLo = Math.max(1, Math.round(lo / 7));
-                            const wHi = Math.max(wLo, Math.round(hi / 7));
+                            // Prefer the API's canonical weeks range (one source
+                            // of truth with the planned reminder email / PDF);
+                            // fall back to local rounding on older API versions.
+                            let wLo, wHi;
+                            if (ewr && typeof ewr.min_weeks === 'number' && typeof ewr.max_weeks === 'number') {
+                                wLo = ewr.min_weeks;
+                                wHi = ewr.max_weeks;
+                            } else {
+                                wLo = Math.max(1, Math.round(lo / 7));
+                                wHi = Math.max(wLo, Math.round(hi / 7));
+                            }
                             return wLo === wHi
                                 ? '~' + wHi + ' week' + (wHi === 1 ? '' : 's')
                                 : wLo + '–' + wHi + ' weeks';
@@ -1273,6 +1283,17 @@
                 banner.innerHTML = '<strong>' + newCount + ' new update' + (newCount === 1 ? '' : 's') +
                     '</strong> since you last checked.';
                 banner.classList.add('show');
+                // Prefix the tab title with the unread count so a pinned/
+                // backgrounded tab signals "something changed" at a glance,
+                // without the client switching to it — the same pinned-tab
+                // stickiness rationale as the step-count in the title (v1.21),
+                // but keyed to what's new since the *last visit* rather than the
+                // phase. The high-water mark is only committed on the initial
+                // submit (not auto-refresh re-renders), so this badge persists
+                // through a session until the page is reopened. The title is
+                // rebuilt from scratch each render above, so the prefix never
+                // stacks across auto-refreshes.
+                document.title = '(' + newCount + ') ' + document.title;
             }
 
             if (d.last_activity_summary) {

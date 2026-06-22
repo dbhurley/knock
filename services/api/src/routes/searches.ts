@@ -139,8 +139,9 @@ const PUBLIC_STATUS_EXPLAINERS: Record<string, string> = {
 // because no activities have happened yet, and an active phase with recent
 // chatter shouldn't trigger it just because it's been the current phase a while.
 // Terminal/non-progressing states (placed, closed_no_fill, cancelled, on_hold)
-// are never stalled — their lack of activity is the expected end-state.
-const STALL_QUIET_DAYS = 7;
+// are never stalled — their lack of activity is the expected end-state. The
+// "quiet for a full week" half of the test is carried by activity_count_last_7d
+// (a fixed 7-day window) rather than a separate threshold constant.
 const STALL_PHASE_DAYS = 14;
 
 // Typical duration (in days) for each progressing phase. Drawn from the same
@@ -539,6 +540,23 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       ? { min_days: completionWindow.min_days, max_days: completionWindow.max_days }
       : null;
 
+    // Canonical weeks-remaining range — the same horizon estimated_days_remaining
+    // carries, pre-rounded to the weeks the status page already renders as
+    // "(about 6–10 weeks out)". That weeks conversion previously lived only in
+    // the frontend's fmtSpan(), so the planned reminder email / PDF (roadmap #4)
+    // would have had to re-implement the days→weeks rounding to quote the same
+    // horizon the page shows — a drift risk the days-only integer pair didn't
+    // close. Surfacing the weeks here makes them one source of truth (same
+    // rationale as estimated_days_remaining and engagement_age_days). Null when
+    // the window is null or under a fortnight, where the page shows days rather
+    // than weeks; rounding mirrors fmtSpan exactly so the two never disagree.
+    let estimatedWeeksRemaining: { min_weeks: number; max_weeks: number } | null = null;
+    if (estimatedDaysRemaining && estimatedDaysRemaining.max_days >= 14) {
+      const minWeeks = Math.max(1, Math.round(estimatedDaysRemaining.min_days / 7));
+      const maxWeeks = Math.max(minWeeks, Math.round(estimatedDaysRemaining.max_days / 7));
+      estimatedWeeksRemaining = { min_weeks: minWeeks, max_weeks: maxWeeks };
+    }
+
     // Expected start date of the *next* phase — a near-term, single-date
     // anchor that complements the v1.11 cumulative completion window (which
     // is the far end of the same calculation). Computed as now + however much
@@ -784,6 +802,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           ? { earliest: completionWindow.earliest, latest: completionWindow.latest }
           : null,
         estimated_days_remaining: estimatedDaysRemaining,
+        estimated_weeks_remaining: estimatedWeeksRemaining,
         is_stalled: isStalled,
         opened_at: row.created_at,
         engagement_age_days: engagementAgeDays,
