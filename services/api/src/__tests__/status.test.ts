@@ -151,6 +151,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak estimated_weeks_remaining on 404 (no time-to-placement hints to anonymous callers)', async () => {
+    // estimated_weeks_remaining is the canonical weeks range to placement —
+    // the same horizon estimated_days_remaining carries, pre-rounded to the
+    // weeks the status page renders. Like that pair, it belongs only on the
+    // verified success shape: observing it on the 404 path would let an
+    // anonymous caller infer both that the search exists AND how far along it
+    // is (the remaining-time math is keyed by the current phase).
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-978',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('estimated_weeks_remaining' in body), 'estimated_weeks_remaining must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak phase_duration_typical on 404 (no pacing benchmarks to anonymous callers)', async () => {
     // phase_duration_typical is the API's canonical typical-duration map for
     // the current phase. It must only appear on the verified success shape —
