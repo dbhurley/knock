@@ -193,11 +193,12 @@ describe('POST /api/v1/searches/status', () => {
   });
 
   it('does not leak placement-window fields on 404 (no post-placement signals to anonymous callers)', async () => {
-    // placed_at, placement_followup_until, and placement_followup_days_remaining
-    // are computed only when a search has actually landed in 'placed' state.
-    // The fields belong only on the verified success shape — otherwise an
-    // anonymous caller who could observe them on a 404 path could infer both
-    // that the search exists AND that it has reached the placed terminal.
+    // placed_at, placement_followup_until, placement_followup_days_remaining,
+    // and placement_age_days are computed only when a search has actually
+    // landed in 'placed' state. The fields belong only on the verified success
+    // shape — otherwise an anonymous caller who could observe them on a 404
+    // path could infer both that the search exists AND that it has reached the
+    // placed terminal.
     const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -211,6 +212,7 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('placed_at' in body), 'placed_at must not leak on 404');
     assert.ok(!('placement_followup_until' in body), 'placement_followup_until must not leak on 404');
     assert.ok(!('placement_followup_days_remaining' in body), 'placement_followup_days_remaining must not leak on 404');
+    assert.ok(!('placement_age_days' in body), 'placement_age_days must not leak on 404');
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
