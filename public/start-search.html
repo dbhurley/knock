@@ -252,7 +252,14 @@
                     if (result.search_number) {
                         numEl.textContent = 'Reference: ' + result.search_number;
                         const linkEl = document.getElementById('status-link');
-                        if (linkEl) linkEl.href = '/status?ref=' + encodeURIComponent(result.search_number);
+                        // Prefer the canonical status_url the intake API returns
+                        // (one source of truth, built by the same statusUrlFor()
+                        // helper the status response and reminder email use) so
+                        // the success-screen link can never drift from the other
+                        // surfaces. Fall back to deriving it locally on older API
+                        // responses that don't yet include the field.
+                        if (linkEl) linkEl.href = result.status_url
+                            || ('/status?ref=' + encodeURIComponent(result.search_number));
                     }
                     // Seed the status-page email under the same localStorage key
                     // /status reads on load. First click from the success screen

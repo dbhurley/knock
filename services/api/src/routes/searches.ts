@@ -745,9 +745,20 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // search has actually landed — terminal-but-not-placed statuses leave
     // these fields null so the status page can keep its placed-state
     // celebration distinct from a cancellation or no-fill close.
+    //
+    // `placement_age_days` is the canonical server-computed count of days
+    // since the placement landed — the post-placement companion to
+    // engagement_age_days, floored from the same shared `nowMs` instant. The
+    // status page already derives this client-side for its "Placed … · 14
+    // days ago" tag; surfacing it from the API makes it one source of truth
+    // so the planned post-placement reminder email / PDF (roadmap #4) can
+    // quote "your placement landed 14 days ago — 76 days of follow-up remain"
+    // off the same integer the page shows instead of re-doing the date math.
+    // Null unless placed, like the other placement fields.
     let placedAt: string | null = null;
     let placementFollowupUntil: string | null = null;
     let placementFollowupDaysRemaining: number | null = null;
+    let placementAgeDays: number | null = null;
     if (row.status === 'placed' && row.status_changed_at) {
       const placedTs = new Date(row.status_changed_at).getTime();
       if (!Number.isNaN(placedTs)) {
@@ -758,6 +769,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           0,
           Math.ceil((untilTs - nowMs) / 86_400_000),
         );
+        placementAgeDays = Math.max(0, Math.floor((nowMs - placedTs) / 86_400_000));
       }
     }
 
@@ -811,6 +823,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         placed_at: placedAt,
         placement_followup_until: placementFollowupUntil,
         placement_followup_days_remaining: placementFollowupDaysRemaining,
+        placement_age_days: placementAgeDays,
         candidates_identified: row.candidates_identified ?? 0,
         candidates_presented: row.candidates_presented ?? 0,
         candidates_interviewing: row.candidates_interviewing ?? 0,

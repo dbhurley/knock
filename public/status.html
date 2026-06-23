@@ -600,7 +600,20 @@
                     } else {
                         let etaText = 'Expected to begin around <strong>' + fmtDate(d.next_milestone_eta) + '</strong>';
                         if (daysUntil !== null && daysUntil > 0) {
-                            etaText += ' (in ~' + daysUntil + ' day' + (daysUntil === 1 ? '' : 's') + ')';
+                            // Express the countdown in weeks past a fortnight for
+                            // readability — "(in ~3 weeks)" scans more easily than
+                            // "(in ~21 days)" at the start of a long phase. Same
+                            // days→weeks rounding the completion-window horizon
+                            // (fmtSpan) uses, so the two never disagree; days
+                            // when the next phase is close in.
+                            let countdown;
+                            if (daysUntil >= 14) {
+                                const w = Math.max(1, Math.round(daysUntil / 7));
+                                countdown = '~' + w + ' week' + (w === 1 ? '' : 's');
+                            } else {
+                                countdown = '~' + daysUntil + ' day' + (daysUntil === 1 ? '' : 's');
+                            }
+                            etaText += ' (in ' + countdown + ')';
                         }
                         previewBits.push('<span class="typical">' + etaText + '.</span>');
                     }
@@ -741,7 +754,12 @@
             const placementCard = document.getElementById('placement-card');
             if (d.status === 'placed' && d.placed_at) {
                 const placedDate = fmtDate(d.placed_at);
-                const placedAgeDays = Math.max(0, Math.floor((Date.now() - new Date(d.placed_at).getTime()) / 86_400_000));
+                // Prefer the API's canonical placement_age_days (one source of
+                // truth, shared with the planned post-placement reminder email /
+                // PDF) and fall back to local date math on older API versions.
+                const placedAgeDays = (typeof d.placement_age_days === 'number')
+                    ? d.placement_age_days
+                    : Math.max(0, Math.floor((Date.now() - new Date(d.placed_at).getTime()) / 86_400_000));
                 const ageTag = placedAgeDays === 0
                     ? 'today'
                     : placedAgeDays + ' day' + (placedAgeDays === 1 ? '' : 's') + ' ago';
