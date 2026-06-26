@@ -467,6 +467,26 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak days_until_target_start on 404 (no scheduling hints to anonymous callers)', async () => {
+    // days_until_target_start is the canonical countdown to the client's target
+    // start date. Like every other derived scheduling/progress field it is
+    // keyed to a real search, so observing the integer on the 404 path would let
+    // an anonymous caller infer both that the search exists AND roughly when the
+    // client wants the role filled. Belongs only on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-977',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('days_until_target_start' in body), 'days_until_target_start must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak status_url on 404 (verified success shape only)', async () => {
     // status_url is the canonical deep-link back to the status surface,
     // echoed from POST /api/v1/intake so the success screen, the page, and
