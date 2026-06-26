@@ -773,6 +773,28 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Canonical server-computed countdown to the client's target start date —
+    // the integer the status page's "(3 weeks away)" / "(4 days past target)"
+    // countdown previously derived entirely client-side. Surfacing it from the
+    // API makes it the single source of truth, so the planned status-change
+    // reminder email / PDF (roadmap #4) can quote "your target start date is
+    // about 3 weeks out" off the same integer the page shows instead of
+    // re-doing the date math. Positive = days until the target, negative once
+    // the target has passed (the page reads that as "N days past target"),
+    // rounded the same way the frontend rounds it so the two never disagree.
+    // Null when there's no target date or the search has reached a terminal
+    // state (placed/cancelled/closed_no_fill) — exactly the cases where the
+    // page already suppresses the countdown. Same one-source-of-truth and
+    // null-in-terminal rationale as engagement_age_days and placement_age_days.
+    const TARGET_TERMINAL_STATUSES = new Set(['placed', 'cancelled', 'closed_no_fill']);
+    let daysUntilTargetStart: number | null = null;
+    if (row.target_start_date && !TARGET_TERMINAL_STATUSES.has(row.status)) {
+      const targetTs = new Date(row.target_start_date).getTime();
+      if (!Number.isNaN(targetTs)) {
+        daysUntilTargetStart = Math.round((targetTs - nowMs) / 86_400_000);
+      }
+    }
+
     // Canonical deep-link back to this status surface. POST /api/v1/intake
     // already returns this exact shape (PUBLIC_BASE_URL + /status?ref=…); echoing
     // it here makes the status response itself a single source of truth for the
@@ -820,6 +842,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         engagement_age_days: engagementAgeDays,
         phase_history: phaseHistory,
         target_start_date: row.target_start_date,
+        days_until_target_start: daysUntilTargetStart,
         placed_at: placedAt,
         placement_followup_until: placementFollowupUntil,
         placement_followup_days_remaining: placementFollowupDaysRemaining,
