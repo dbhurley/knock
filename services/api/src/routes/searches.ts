@@ -606,6 +606,21 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       phasesCompleted = Math.max(0, phase.step - 1);
     }
 
+    // Canonical count of phases the search has *not* yet finished — the
+    // forward-looking complement to phases_completed, defined so the two
+    // always sum to the full 8-phase journey (phases_completed + phases_remaining
+    // === phase_total). For an in-flight progressing phase this includes the
+    // current phase (it isn't complete yet); a successful placement leaves
+    // zero remaining. Null in exactly the same non-progressing/negative-terminal
+    // states as phases_completed (on_hold, cancelled, closed_no_fill), where a
+    // "N to go" count would misrepresent a paused or closed-without-placement
+    // search as still on track. Same one-source-of-truth rationale as
+    // phases_completed and phases_on_pace: the planned status-change reminder
+    // email / PDF (roadmap #4) can quote "5 phases still ahead" off the same
+    // integer instead of re-deriving phase_total − phases_completed itself.
+    const phasesRemaining: number | null =
+      phasesCompleted === null ? null : PUBLIC_STATUS_FORWARD.length - phasesCompleted;
+
     // Canonical server-computed engagement length (days since the search
     // opened). The status page already derives this client-side for its
     // "(11 days ago)" tag, but surfacing it from the API makes it the single
@@ -795,6 +810,24 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Canonical weeks rounding of the target-start countdown — the same
+    // days→weeks conversion the status page applies inline (`Math.round(days
+    // / 7)`) when the target is more than a month out and it renders
+    // "(~6 weeks away)". That conversion was the last client-side days→weeks
+    // read on the page; surfacing it here makes it one source of truth, so
+    // the planned reminder email / PDF (roadmap #4) can quote "your target
+    // start date is about 6 weeks out" off the same integer the page shows.
+    // Same rationale and rounding as estimated_weeks_remaining (v1.27): null
+    // whenever the page shows days rather than weeks — i.e. when there's no
+    // countdown at all, or when the target is within a month (days ≤ 30,
+    // where the page renders the exact "(N days away)") or already past
+    // (negative, always rendered in days). Only the > 30-day case rounds to
+    // weeks, matching the frontend branch exactly so the two never disagree.
+    let weeksUntilTargetStart: number | null = null;
+    if (daysUntilTargetStart !== null && daysUntilTargetStart > 30) {
+      weeksUntilTargetStart = Math.round(daysUntilTargetStart / 7);
+    }
+
     // Canonical deep-link back to this status surface. POST /api/v1/intake
     // already returns this exact shape (PUBLIC_BASE_URL + /status?ref=…); echoing
     // it here makes the status response itself a single source of truth for the
@@ -820,6 +853,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_step: phase.step,
         phase_total: 8,
         phases_completed: phasesCompleted,
+        phases_remaining: phasesRemaining,
         phases_on_pace: phasesOnPace,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
@@ -843,6 +877,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_history: phaseHistory,
         target_start_date: row.target_start_date,
         days_until_target_start: daysUntilTargetStart,
+        weeks_until_target_start: weeksUntilTargetStart,
         placed_at: placedAt,
         placement_followup_until: placementFollowupUntil,
         placement_followup_days_remaining: placementFollowupDaysRemaining,
