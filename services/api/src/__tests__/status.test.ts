@@ -467,6 +467,48 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak phases_remaining on 404 (no progress hints to anonymous callers)', async () => {
+    // phases_remaining is the forward-looking complement to phases_completed —
+    // the count of phases the search has not yet finished. Like every other
+    // progress signal it is keyed by how far the search has advanced, so
+    // observing it on the 404 path would let an anonymous caller infer both
+    // that the search exists AND how far along it is. Belongs only on the
+    // verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-975',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('phases_remaining' in body), 'phases_remaining must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
+  it('does not leak weeks_until_target_start on 404 (no scheduling hints to anonymous callers)', async () => {
+    // weeks_until_target_start is the canonical weeks rounding of the target
+    // countdown — the same scheduling signal as days_until_target_start, just
+    // pre-rounded to weeks. Like that integer it is keyed to a real search, so
+    // observing it on the 404 path would let an anonymous caller infer both
+    // that the search exists AND roughly when the client wants the role filled.
+    // Belongs only on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-973',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('weeks_until_target_start' in body), 'weeks_until_target_start must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak days_until_target_start on 404 (no scheduling hints to anonymous callers)', async () => {
     // days_until_target_start is the canonical countdown to the client's target
     // start date. Like every other derived scheduling/progress field it is

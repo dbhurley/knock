@@ -1127,7 +1127,12 @@
                         countdownEl.textContent = '(' + days + ' day' + (days === 1 ? '' : 's') + ' away)';
                         countdownEl.classList.add('urgent');
                     } else {
-                        const wks = Math.round(days / 7);
+                        // Prefer the API's canonical weeks rounding (one source
+                        // of truth, shared with the planned reminder email / PDF)
+                        // and fall back to local rounding on older API versions.
+                        const wks = (typeof d.weeks_until_target_start === 'number')
+                            ? d.weeks_until_target_start
+                            : Math.round(days / 7);
                         countdownEl.textContent = '(~' + wks + ' week' + (wks === 1 ? '' : 's') + ' away)';
                     }
                 }
@@ -1288,6 +1293,21 @@
                         summaryText += ' · ' + (d.phases_on_pace >= done
                             ? 'all on pace'
                             : d.phases_on_pace + ' of ' + done + ' on pace');
+                    }
+                    // Append the forward-looking placement horizon so the
+                    // collapsed summary carries a fresh time-to-placement
+                    // glance every visit, not just a backward count of phases
+                    // done. Reuses the API's canonical estimated_weeks_remaining
+                    // (v1.27) — the same weeks the placement-window line renders
+                    // — so the two never disagree; null in terminal/non-
+                    // progressing states (placed, etc.) where a forward horizon
+                    // is meaningless, so this segment simply doesn't append.
+                    const ewrSummary = d.estimated_weeks_remaining;
+                    if (ewrSummary && typeof ewrSummary.min_weeks === 'number'
+                        && typeof ewrSummary.max_weeks === 'number') {
+                        summaryText += ' · ' + (ewrSummary.min_weeks === ewrSummary.max_weeks
+                            ? '~' + ewrSummary.max_weeks + ' week' + (ewrSummary.max_weeks === 1 ? '' : 's') + ' to go'
+                            : ewrSummary.min_weeks + '–' + ewrSummary.max_weeks + ' weeks to go');
                     }
                     summaryEl.textContent = summaryText;
                 }
