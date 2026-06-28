@@ -169,6 +169,13 @@ const PUBLIC_STATUS_FORWARD: string[] = [
   'presenting', 'client_interviews', 'offer', 'placed',
 ];
 
+// The total number of phases in a complete search journey. Derived from the
+// forward-phase list so the response's `phase_total`, the phases_completed /
+// phases_remaining counts, and a placement's "whole journey" tally all read
+// from one source — a future phase added to PUBLIC_STATUS_FORWARD updates
+// every downstream count at once instead of leaving a hardcoded `8` behind.
+const PHASE_TOTAL = PUBLIC_STATUS_FORWARD.length;
+
 // Length of Janet's post-placement follow-up window. The explainer copy
 // already commits to "Janet stays in touch through the candidate's first
 // 90 days" — surfacing the exact remaining-days countdown turns the
@@ -586,6 +593,24 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Canonical weeks rounding of the next-milestone countdown — the same
+    // days→weeks conversion the status page applies inline (`Math.max(1,
+    // Math.round(days / 7))`) to render "(in ~3 weeks)" once the countdown is
+    // at or past a fortnight. That inline rounding was the last client-side
+    // days→weeks read left on the page after v1.30 canonicalized the
+    // target-start one; surfacing the weeks integer here makes it one source
+    // of truth, so the planned reminder email / PDF (roadmap #4) can quote
+    // "the next phase is about 3 weeks out" off the same integer the page
+    // shows. Same rationale and threshold as estimated_weeks_remaining (v1.27):
+    // null whenever the page shows days rather than weeks — i.e. when there's
+    // no countdown at all or when the next phase is close in (< 14 days, where
+    // the page renders the exact "(in ~N days)"). The page prefers this field
+    // and falls back to local rounding only on older API versions.
+    let weeksUntilNextMilestone: number | null = null;
+    if (typeof daysUntilNextMilestone === 'number' && daysUntilNextMilestone >= 14) {
+      weeksUntilNextMilestone = Math.max(1, Math.round(daysUntilNextMilestone / 7));
+    }
+
     // Canonical server-computed count of phases the search has finished.
     // The status page already derives this client-side for its collapsed
     // journey summary ("3 of 8 phases complete"), but surfacing it from the
@@ -601,7 +626,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // the status page hides the journey overview for those states anyway.
     let phasesCompleted: number | null = null;
     if (row.status === 'placed') {
-      phasesCompleted = PUBLIC_STATUS_FORWARD.length; // 8 — journey fully complete
+      phasesCompleted = PHASE_TOTAL; // journey fully complete
     } else if (PUBLIC_STATUS_FORWARD.includes(row.status)) {
       phasesCompleted = Math.max(0, phase.step - 1);
     }
@@ -619,7 +644,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // email / PDF (roadmap #4) can quote "5 phases still ahead" off the same
     // integer instead of re-deriving phase_total − phases_completed itself.
     const phasesRemaining: number | null =
-      phasesCompleted === null ? null : PUBLIC_STATUS_FORWARD.length - phasesCompleted;
+      phasesCompleted === null ? null : PHASE_TOTAL - phasesCompleted;
 
     // Canonical server-computed engagement length (days since the search
     // opened). The status page already derives this client-side for its
@@ -851,7 +876,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_label: phase.label,
         phase_explainer: PUBLIC_STATUS_EXPLAINERS[row.status] ?? null,
         phase_step: phase.step,
-        phase_total: 8,
+        phase_total: PHASE_TOTAL,
         phases_completed: phasesCompleted,
         phases_remaining: phasesRemaining,
         phases_on_pace: phasesOnPace,
@@ -859,6 +884,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         next_milestone_label: nextMilestoneLabel,
         next_milestone_eta: nextMilestoneEta,
         days_until_next_milestone: daysUntilNextMilestone,
+        weeks_until_next_milestone: weeksUntilNextMilestone,
         next_phase_explainer: nextStatus ? PUBLIC_STATUS_EXPLAINERS[nextStatus] ?? null : null,
         next_phase_duration_typical: nextStatus ? PUBLIC_STATUS_TYPICAL_DURATION[nextStatus] ?? null : null,
         status_changed_at: row.status_changed_at,
