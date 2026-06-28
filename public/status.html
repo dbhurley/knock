@@ -575,7 +575,21 @@
             const nextEl = document.getElementById('next-milestone');
             const nextPreviewEl = document.getElementById('next-preview');
             if (d.next_milestone_label) {
-                document.getElementById('next-milestone-label').textContent = d.next_milestone_label;
+                let nextText = d.next_milestone_label;
+                // Append the forward phase count so the always-visible
+                // next-milestone line carries a glanceable, shrinking "how many
+                // phases are still ahead" signal — the always-visible companion
+                // to the collapsed journey summary's backward "3 of 8 complete"
+                // count. Reuses the API's canonical phases_remaining (v1.30,
+                // previously an API-only pre-pave with no page consumer), which
+                // includes the current in-flight phase and is null in
+                // terminal/non-progressing states where a "N to go" count would
+                // mislead — so the segment simply doesn't append there.
+                if (typeof d.phases_remaining === 'number' && d.phases_remaining > 0) {
+                    nextText += ' · ' + d.phases_remaining + ' phase' +
+                        (d.phases_remaining === 1 ? '' : 's') + ' to go';
+                }
+                document.getElementById('next-milestone-label').textContent = nextText;
                 nextEl.style.display = 'block';
                 // Next-phase preview: explainer sentence + typical duration so
                 // the client sees not just what's coming, but how long that
@@ -617,13 +631,18 @@
                         if (daysUntil !== null && daysUntil > 0) {
                             // Express the countdown in weeks past a fortnight for
                             // readability — "(in ~3 weeks)" scans more easily than
-                            // "(in ~21 days)" at the start of a long phase. Same
-                            // days→weeks rounding the completion-window horizon
-                            // (fmtSpan) uses, so the two never disagree; days
-                            // when the next phase is close in.
+                            // "(in ~21 days)" at the start of a long phase. Prefer
+                            // the API's canonical weeks_until_next_milestone (one
+                            // source of truth, shared with the planned reminder
+                            // email / PDF) and fall back to local rounding only on
+                            // older API versions — the same days→weeks rounding so
+                            // the two never disagree; days when the next phase is
+                            // close in.
                             let countdown;
                             if (daysUntil >= 14) {
-                                const w = Math.max(1, Math.round(daysUntil / 7));
+                                const w = (typeof d.weeks_until_next_milestone === 'number')
+                                    ? d.weeks_until_next_milestone
+                                    : Math.max(1, Math.round(daysUntil / 7));
                                 countdown = '~' + w + ' week' + (w === 1 ? '' : 's');
                             } else {
                                 countdown = '~' + daysUntil + ' day' + (daysUntil === 1 ? '' : 's');
