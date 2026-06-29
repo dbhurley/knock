@@ -803,8 +803,24 @@
                 const untilDate = d.placement_followup_until ? fmtDate(d.placement_followup_until) : null;
                 let countdownText;
                 if (typeof remaining === 'number' && untilDate) {
+                    // Express the still-open window in weeks past a fortnight —
+                    // "~11 weeks remaining" scans better than "76 days remaining"
+                    // across most of the 90-day window — and switch back to exact
+                    // days inside the final fortnight, when the precise countdown
+                    // matters most. Prefer the API's canonical
+                    // placement_followup_weeks_remaining (one source of truth);
+                    // fall back to the same rounding locally on older API versions.
+                    let remainingStr;
+                    if (remaining >= 14) {
+                        const wks = (typeof d.placement_followup_weeks_remaining === 'number')
+                            ? d.placement_followup_weeks_remaining
+                            : Math.max(1, Math.round(remaining / 7));
+                        remainingStr = '~' + wks + ' week' + (wks === 1 ? '' : 's');
+                    } else {
+                        remainingStr = remaining + ' day' + (remaining === 1 ? '' : 's');
+                    }
                     countdownText = remaining > 0
-                        ? "Janet's 90-day follow-up window runs through <strong>" + untilDate + '</strong> — <strong>' + remaining + ' day' + (remaining === 1 ? '' : 's') + '</strong> remaining.'
+                        ? "Janet's 90-day follow-up window runs through <strong>" + untilDate + '</strong> — <strong>' + remainingStr + '</strong> remaining.'
                         : "Janet's 90-day follow-up window completed on <strong>" + untilDate + '</strong>. Reach out anytime if anything else comes up.';
                 } else {
                     countdownText = "Janet stays in touch through the candidate's first 90 days.";
@@ -828,9 +844,20 @@
                     ? d.engagement_age_days
                     : Math.floor((Date.now() - new Date(d.opened_at).getTime()) / 86_400_000);
                 if (!isNaN(ageDays) && ageDays >= 0) {
-                    openedRelEl.textContent = ageDays === 0
-                        ? '(today)'
-                        : '(' + ageDays + ' day' + (ageDays === 1 ? '' : 's') + ' ago)';
+                    if (ageDays === 0) {
+                        openedRelEl.textContent = '(today)';
+                    } else if (ageDays >= 14) {
+                        // Long engagements (the 10–16-week stickiness window)
+                        // read better in weeks. Prefer the API's canonical
+                        // engagement_age_weeks (one source of truth); fall back to
+                        // the same rounding locally on older API versions.
+                        const wks = (typeof d.engagement_age_weeks === 'number')
+                            ? d.engagement_age_weeks
+                            : Math.max(1, Math.round(ageDays / 7));
+                        openedRelEl.textContent = '(~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago)';
+                    } else {
+                        openedRelEl.textContent = '(' + ageDays + ' day' + (ageDays === 1 ? '' : 's') + ' ago)';
+                    }
                 } else {
                     openedRelEl.textContent = '';
                 }
