@@ -212,6 +212,7 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('placed_at' in body), 'placed_at must not leak on 404');
     assert.ok(!('placement_followup_until' in body), 'placement_followup_until must not leak on 404');
     assert.ok(!('placement_followup_days_remaining' in body), 'placement_followup_days_remaining must not leak on 404');
+    assert.ok(!('placement_followup_weeks_remaining' in body), 'placement_followup_weeks_remaining must not leak on 404');
     assert.ok(!('placement_age_days' in body), 'placement_age_days must not leak on 404');
     assert.ok(!('data' in body), 'must not include data on 404');
   });
@@ -442,6 +443,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.equal(res.status, 404);
     const body = await res.json();
     assert.ok(!('engagement_age_days' in body), 'engagement_age_days must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
+  it('does not leak engagement_age_weeks on 404 (no engagement-length hints to anonymous callers)', async () => {
+    // engagement_age_weeks is the canonical weeks rounding of engagement_age_days
+    // — the same days-since-opened signal, pre-rounded to the weeks the status
+    // page renders past a fortnight. Like the day count it accompanies, observing
+    // it on the 404 path would let an anonymous caller infer both that the search
+    // exists AND how long it has been running. Belongs only on the verified
+    // success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-969',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('engagement_age_weeks' in body), 'engagement_age_weeks must not leak on 404');
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 

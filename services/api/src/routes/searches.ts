@@ -262,6 +262,19 @@ function computeCompletionWindow(
   };
 }
 
+// Canonical days→weeks rounding, shared by every weeks-valued status field
+// (estimated_weeks_remaining, weeks_until_next_milestone, weeks_until_target_start,
+// engagement_age_weeks, placement_followup_weeks_remaining). The status page
+// applies exactly this `Math.max(1, Math.round(days / 7))` inline when it shows
+// a span in weeks; centralising it here means the rounding lives in one place
+// instead of five, so a future tweak can't leave one field rounding differently
+// from the others. Same one-source-of-truth rationale as the v1.18 statusUrlFor()
+// and v1.31 PHASE_TOTAL extractions — and it's byte-identical to the prior inline
+// math (the floor-at-1 is a no-op everywhere the result was already ≥ 1).
+function daysToWeeks(days: number): number {
+  return Math.max(1, Math.round(days / 7));
+}
+
 // Activity types we surface to clients. Internal-only types (e.g. fee_paid,
 // note_added) are filtered out so we never leak commercial or candidate detail.
 const PUBLIC_ACTIVITY_TYPES = new Set([
@@ -559,8 +572,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // than weeks; rounding mirrors fmtSpan exactly so the two never disagree.
     let estimatedWeeksRemaining: { min_weeks: number; max_weeks: number } | null = null;
     if (estimatedDaysRemaining && estimatedDaysRemaining.max_days >= 14) {
-      const minWeeks = Math.max(1, Math.round(estimatedDaysRemaining.min_days / 7));
-      const maxWeeks = Math.max(minWeeks, Math.round(estimatedDaysRemaining.max_days / 7));
+      const minWeeks = daysToWeeks(estimatedDaysRemaining.min_days);
+      const maxWeeks = Math.max(minWeeks, daysToWeeks(estimatedDaysRemaining.max_days));
       estimatedWeeksRemaining = { min_weeks: minWeeks, max_weeks: maxWeeks };
     }
 
@@ -608,7 +621,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // and falls back to local rounding only on older API versions.
     let weeksUntilNextMilestone: number | null = null;
     if (typeof daysUntilNextMilestone === 'number' && daysUntilNextMilestone >= 14) {
-      weeksUntilNextMilestone = Math.max(1, Math.round(daysUntilNextMilestone / 7));
+      weeksUntilNextMilestone = daysToWeeks(daysUntilNextMilestone);
     }
 
     // Canonical server-computed count of phases the search has finished.
@@ -658,6 +671,20 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     if (row.created_at) {
       const ms = nowMs - new Date(row.created_at).getTime();
       if (!Number.isNaN(ms) && ms >= 0) engagementAgeDays = Math.floor(ms / 86_400_000);
+    }
+
+    // Canonical weeks rounding of engagement_age_days — the days→weeks read for
+    // the "Search opened … (N weeks ago)" tag. The 10–16-week engagement is the
+    // stickiness window CLAUDE.md keeps returning to, and on a long-running
+    // search "(80 days ago)" scans worse than "(~11 weeks ago)". Surfacing the
+    // weeks integer makes that read one source of truth (same rationale and
+    // fortnight threshold as estimated_weeks_remaining / weeks_until_next_milestone /
+    // weeks_until_target_start): the planned reminder email / PDF (roadmap #4) can
+    // quote "your search has been running about 11 weeks" off the same integer the
+    // page renders. Null under a fortnight, where the page still shows exact days.
+    let engagementAgeWeeks: number | null = null;
+    if (engagementAgeDays !== null && engagementAgeDays >= 14) {
+      engagementAgeWeeks = daysToWeeks(engagementAgeDays);
     }
 
     // Phase-transition history. Drawn from the `status_change` rows in
@@ -795,9 +822,18 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // quote "your placement landed 14 days ago — 76 days of follow-up remain"
     // off the same integer the page shows instead of re-doing the date math.
     // Null unless placed, like the other placement fields.
+    // `placement_followup_weeks_remaining` is the canonical weeks rounding of
+    // the day countdown — the post-placement card stays live for the full 90-day
+    // window, where a two-digit "76 days remaining" scans worse than a glanceable
+    // "~11 weeks remaining". Same days→weeks one-source-of-truth + fortnight
+    // threshold as engagement_age_weeks and the other weeks fields: the planned
+    // post-placement reminder email / PDF (roadmap #4) can quote the same weeks
+    // the page shows. Null when not placed or inside the final fortnight, where
+    // the card keeps the exact day countdown that matters most as the window closes.
     let placedAt: string | null = null;
     let placementFollowupUntil: string | null = null;
     let placementFollowupDaysRemaining: number | null = null;
+    let placementFollowupWeeksRemaining: number | null = null;
     let placementAgeDays: number | null = null;
     if (row.status === 'placed' && row.status_changed_at) {
       const placedTs = new Date(row.status_changed_at).getTime();
@@ -809,6 +845,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           0,
           Math.ceil((untilTs - nowMs) / 86_400_000),
         );
+        if (placementFollowupDaysRemaining >= 14) {
+          placementFollowupWeeksRemaining = daysToWeeks(placementFollowupDaysRemaining);
+        }
         placementAgeDays = Math.max(0, Math.floor((nowMs - placedTs) / 86_400_000));
       }
     }
@@ -850,7 +889,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // weeks, matching the frontend branch exactly so the two never disagree.
     let weeksUntilTargetStart: number | null = null;
     if (daysUntilTargetStart !== null && daysUntilTargetStart > 30) {
-      weeksUntilTargetStart = Math.round(daysUntilTargetStart / 7);
+      // days > 30 here, so the floor-at-1 in daysToWeeks never triggers —
+      // byte-identical to the prior bare Math.round(days / 7).
+      weeksUntilTargetStart = daysToWeeks(daysUntilTargetStart);
     }
 
     // Canonical deep-link back to this status surface. POST /api/v1/intake
@@ -900,6 +941,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         is_stalled: isStalled,
         opened_at: row.created_at,
         engagement_age_days: engagementAgeDays,
+        engagement_age_weeks: engagementAgeWeeks,
         phase_history: phaseHistory,
         target_start_date: row.target_start_date,
         days_until_target_start: daysUntilTargetStart,
@@ -907,6 +949,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         placed_at: placedAt,
         placement_followup_until: placementFollowupUntil,
         placement_followup_days_remaining: placementFollowupDaysRemaining,
+        placement_followup_weeks_remaining: placementFollowupWeeksRemaining,
         placement_age_days: placementAgeDays,
         candidates_identified: row.candidates_identified ?? 0,
         candidates_presented: row.candidates_presented ?? 0,
