@@ -214,6 +214,7 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('placement_followup_days_remaining' in body), 'placement_followup_days_remaining must not leak on 404');
     assert.ok(!('placement_followup_weeks_remaining' in body), 'placement_followup_weeks_remaining must not leak on 404');
     assert.ok(!('placement_age_days' in body), 'placement_age_days must not leak on 404');
+    assert.ok(!('placement_age_weeks' in body), 'placement_age_weeks must not leak on 404');
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
@@ -235,6 +236,7 @@ describe('POST /api/v1/searches/status', () => {
     assert.equal(res.status, 404);
     const body = await res.json();
     assert.ok(!('days_since_last_activity' in body), 'recency field must not leak on 404');
+    assert.ok(!('weeks_since_last_activity' in body), 'recency weeks field must not leak on 404');
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 

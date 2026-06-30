@@ -794,9 +794,23 @@
                 const placedAgeDays = (typeof d.placement_age_days === 'number')
                     ? d.placement_age_days
                     : Math.max(0, Math.floor((Date.now() - new Date(d.placed_at).getTime()) / 86_400_000));
-                const ageTag = placedAgeDays === 0
-                    ? 'today'
-                    : placedAgeDays + ' day' + (placedAgeDays === 1 ? '' : 's') + ' ago';
+                // The placement card stays live for the full 90-day follow-up
+                // window, where "(76 days ago)" scans worse than "(~11 weeks ago)".
+                // Read in weeks past a fortnight (preferring the API's canonical
+                // placement_age_weeks, one source of truth; falling back to the same
+                // rounding locally on older API versions), exact days inside the
+                // first fortnight. Mirrors the engagement-age tag below.
+                let ageTag;
+                if (placedAgeDays === 0) {
+                    ageTag = 'today';
+                } else if (placedAgeDays >= 14) {
+                    const wks = (typeof d.placement_age_weeks === 'number')
+                        ? d.placement_age_weeks
+                        : Math.max(1, Math.round(placedAgeDays / 7));
+                    ageTag = '~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago';
+                } else {
+                    ageTag = placedAgeDays + ' day' + (placedAgeDays === 1 ? '' : 's') + ' ago';
+                }
                 document.getElementById('placement-headline').innerHTML =
                     'Placed on <strong>' + placedDate + '</strong> · ' + ageTag + '.';
                 const remaining = d.placement_followup_days_remaining;
@@ -904,9 +918,24 @@
                     // days_since_last_activity is null, so the bare line stands.
                     if (typeof d.days_since_last_activity === 'number') {
                         const dsl = d.days_since_last_activity;
-                        const recency = dsl === 0
-                            ? 'latest today'
-                            : 'latest ' + dsl + ' day' + (dsl === 1 ? '' : 's') + ' ago';
+                        // Read the recency anchor in weeks past a fortnight —
+                        // "latest ~4 weeks ago" scans better than "latest 30 days
+                        // ago" on a long-quiet or post-placement search, matching
+                        // the weeks-past-fortnight convention the engagement-age
+                        // and placement-age tags use. Prefer the API's canonical
+                        // weeks_since_last_activity (one source of truth); fall
+                        // back to the same rounding locally on older API versions.
+                        let recency;
+                        if (dsl === 0) {
+                            recency = 'latest today';
+                        } else if (dsl >= 14) {
+                            const wks = (typeof d.weeks_since_last_activity === 'number')
+                                ? d.weeks_since_last_activity
+                                : Math.max(1, Math.round(dsl / 7));
+                            recency = 'latest ~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago';
+                        } else {
+                            recency = 'latest ' + dsl + ' day' + (dsl === 1 ? '' : 's') + ' ago';
+                        }
                         label += ' · ' + recency;
                     }
                     velocitySummary.textContent = label;
@@ -918,18 +947,25 @@
 
             // Week-over-week velocity trend chip. Sits to the right of the
             // activity row when the API supplies a categorical trend label.
-            // The chip stays hidden in two cases: (a) when the search has
+            // The chip stays hidden in three cases: (a) when the search has
             // been quiet across both windows (the 'quiet' trend is already
-            // implied by the "Quiet stretch" copy on the velocity row), and
-            // (b) when the API is rolled back ahead of the page and the
-            // field is missing. A 'steady' label is the least visually
-            // interesting state but still shipped because it gives the
+            // implied by the "Quiet stretch" copy on the velocity row), (b)
+            // when the search has reached a terminal state (placed, cancelled,
+            // closed_no_fill) — activity naturally tapers off once a search
+            // concludes, so a "↓ down from 5" delta there reads as a downer on
+            // what's most often a successful placement rather than a signal of
+            // pipeline health (same "don't render a misleading negative on the
+            // moment that matters" rationale as hiding the progress bar for
+            // negative-terminals), and (c) when the API is rolled back ahead of
+            // the page and the field is missing. A 'steady' label is the least
+            // visually interesting state but still shipped because it gives the
             // client positive confirmation that the tempo hasn't dropped.
+            const terminalStatus = ['placed', 'cancelled', 'closed_no_fill'].indexOf(d.status) !== -1;
             velocityTrendEl.className = 'velocity-trend';
             velocityTrendEl.style.display = 'none';
             velocityTrendEl.removeAttribute('title');
             velocityTrendEl.removeAttribute('aria-label');
-            if (d.is_stalled !== true && typeof d.velocity_trend === 'string'
+            if (d.is_stalled !== true && !terminalStatus && typeof d.velocity_trend === 'string'
                 && typeof d.activity_count_prev_7d === 'number') {
                 const trend = d.velocity_trend;
                 const prev = d.activity_count_prev_7d;
