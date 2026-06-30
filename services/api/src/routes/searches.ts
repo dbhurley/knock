@@ -264,11 +264,12 @@ function computeCompletionWindow(
 
 // Canonical days→weeks rounding, shared by every weeks-valued status field
 // (estimated_weeks_remaining, weeks_until_next_milestone, weeks_until_target_start,
-// engagement_age_weeks, placement_followup_weeks_remaining). The status page
+// engagement_age_weeks, placement_followup_weeks_remaining, placement_age_weeks,
+// weeks_since_last_activity). The status page
 // applies exactly this `Math.max(1, Math.round(days / 7))` inline when it shows
 // a span in weeks; centralising it here means the rounding lives in one place
-// instead of five, so a future tweak can't leave one field rounding differently
-// from the others. Same one-source-of-truth rationale as the v1.18 statusUrlFor()
+// instead of being open-coded per field, so a future tweak can't leave one
+// field rounding differently from the others. Same one-source-of-truth rationale as the v1.18 statusUrlFor()
 // and v1.31 PHASE_TOTAL extractions — and it's byte-identical to the prior inline
 // math (the floor-at-1 is a no-op everywhere the result was already ≥ 1).
 function daysToWeeks(days: number): number {
@@ -514,6 +515,21 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       if (!Number.isNaN(ms) && ms >= 0) {
         daysSinceLastActivity = Math.floor(ms / 86_400_000);
       }
+    }
+
+    // Canonical weeks rounding of days_since_last_activity — the recency anchor
+    // the velocity row renders as "· latest N days ago". On a long-quiet (but
+    // not stalled) or post-placement search "latest 30 days ago" scans worse
+    // than "latest ~4 weeks ago", so the page reads it in weeks past a fortnight
+    // — the same convention engagement_age_weeks / placement_age_weeks already
+    // use for their age tags. Surfacing the integer here makes that read one
+    // source of truth (the planned reminder email / PDF can quote it too) rather
+    // than another inline frontend days→weeks conversion. Null under a fortnight,
+    // where the page still shows exact days, and null when there's no public
+    // activity yet — mirroring days_since_last_activity.
+    let weeksSinceLastActivity: number | null = null;
+    if (daysSinceLastActivity !== null && daysSinceLastActivity >= 14) {
+      weeksSinceLastActivity = daysToWeeks(daysSinceLastActivity);
     }
 
     // Honest stall signal: progressing phase, no public activity in a week,
@@ -830,11 +846,22 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // post-placement reminder email / PDF (roadmap #4) can quote the same weeks
     // the page shows. Null when not placed or inside the final fortnight, where
     // the card keeps the exact day countdown that matters most as the window closes.
+    // `placement_age_weeks` is the canonical weeks rounding of placement_age_days —
+    // the days-since-placement companion to placement_followup_weeks_remaining and
+    // the post-placement mirror of engagement_age_weeks. The placement card's
+    // "Placed · 14 days ago" tag reads in raw days, but the card stays live for the
+    // whole 90-day window, where "(76 days ago)" scans worse than "(~11 weeks ago)".
+    // Same days→weeks one-source-of-truth + fortnight threshold as the other weeks
+    // fields: the planned post-placement reminder email / PDF (roadmap #4) can quote
+    // "your placement landed about 11 weeks ago" off the same integer the page shows.
+    // Null when not placed or inside the first fortnight, where the page still shows
+    // the exact day count.
     let placedAt: string | null = null;
     let placementFollowupUntil: string | null = null;
     let placementFollowupDaysRemaining: number | null = null;
     let placementFollowupWeeksRemaining: number | null = null;
     let placementAgeDays: number | null = null;
+    let placementAgeWeeks: number | null = null;
     if (row.status === 'placed' && row.status_changed_at) {
       const placedTs = new Date(row.status_changed_at).getTime();
       if (!Number.isNaN(placedTs)) {
@@ -849,6 +876,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           placementFollowupWeeksRemaining = daysToWeeks(placementFollowupDaysRemaining);
         }
         placementAgeDays = Math.max(0, Math.floor((nowMs - placedTs) / 86_400_000));
+        if (placementAgeDays >= 14) {
+          placementAgeWeeks = daysToWeeks(placementAgeDays);
+        }
       }
     }
 
@@ -931,6 +961,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         status_changed_at: row.status_changed_at,
         days_in_phase: daysInPhase,
         days_since_last_activity: daysSinceLastActivity,
+        weeks_since_last_activity: weeksSinceLastActivity,
         phase_duration_typical: PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null,
         current_phase_on_pace: currentPhaseOnPace,
         estimated_completion_window: completionWindow
@@ -951,6 +982,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         placement_followup_days_remaining: placementFollowupDaysRemaining,
         placement_followup_weeks_remaining: placementFollowupWeeksRemaining,
         placement_age_days: placementAgeDays,
+        placement_age_weeks: placementAgeWeeks,
         candidates_identified: row.candidates_identified ?? 0,
         candidates_presented: row.candidates_presented ?? 0,
         candidates_interviewing: row.candidates_interviewing ?? 0,
