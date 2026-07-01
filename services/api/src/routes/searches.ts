@@ -176,6 +176,20 @@ const PUBLIC_STATUS_FORWARD: string[] = [
 // every downstream count at once instead of leaving a hardcoded `8` behind.
 const PHASE_TOTAL = PUBLIC_STATUS_FORWARD.length;
 
+// A search is "progressing" when it's in one of the forward phases but hasn't
+// yet reached the `placed` terminal — i.e. still moving toward a placement.
+// This exact predicate (`in the forward list AND not placed`) gates every
+// forward-looking field on the status response: days_in_phase, is_stalled,
+// current_phase_on_pace, the next-milestone ETA, and the completion window all
+// only make sense while the search is still in flight. It was open-coded in
+// four places; centralising it means a future phase-model change can't leave
+// one of those fields using a subtly different notion of "still progressing".
+// Same one-source-of-truth rationale as the daysToWeeks() and PHASE_TOTAL
+// extractions — pure refactor, byte-identical to the inline expression.
+function isProgressingPhase(status: string): boolean {
+  return PUBLIC_STATUS_FORWARD.includes(status) && status !== 'placed';
+}
+
 // Length of Janet's post-placement follow-up window. The explainer copy
 // already commits to "Janet stays in touch through the candidate's first
 // 90 days" — surfacing the exact remaining-days countdown turns the
@@ -495,7 +509,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // Only computed when status_changed_at is populated and the search is
     // still in a progressing phase (terminal/non-progressing → null).
     let daysInPhase: number | null = null;
-    if (row.status_changed_at && PUBLIC_STATUS_FORWARD.includes(row.status) && row.status !== 'placed') {
+    if (row.status_changed_at && isProgressingPhase(row.status)) {
       const ms = nowMs - new Date(row.status_changed_at).getTime();
       if (!Number.isNaN(ms) && ms >= 0) {
         daysInPhase = Math.floor(ms / 86_400_000);
@@ -538,8 +552,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // for the client to nudge Janet. Pre-paves the email-reminder cron from
     // roadmap #4 (a "your search has gone quiet — want a check-in?" message
     // is exactly what should fire when this trips).
-    const isStalled = PUBLIC_STATUS_FORWARD.includes(row.status)
-      && row.status !== 'placed'
+    const isStalled = isProgressingPhase(row.status)
       && activityCountLast7d === 0
       && typeof daysInPhase === 'number'
       && daysInPhase >= STALL_PHASE_DAYS;
@@ -558,9 +571,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // email / PDF (roadmap #4) can quote "Sourcing is on pace — 18 of a
     // typical 14–28 days" off this boolean instead of re-deriving the benchmark.
     let currentPhaseOnPace: boolean | null = null;
-    if (typeof daysInPhase === 'number'
-        && PUBLIC_STATUS_FORWARD.includes(row.status)
-        && row.status !== 'placed') {
+    if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
       const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
       if (typical) currentPhaseOnPace = daysInPhase <= typical.max_days;
     }
@@ -613,7 +624,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // has reached or passed its typical max. Null whenever the ETA is null.
     let nextMilestoneEta: string | null = null;
     let daysUntilNextMilestone: number | null = null;
-    if (nextStatus && PUBLIC_STATUS_FORWARD.includes(row.status) && row.status !== 'placed') {
+    if (nextStatus && isProgressingPhase(row.status)) {
       const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
       if (typical) {
         const remaining = Math.max(0, typical.max_days - Math.max(0, daysInPhase ?? 0));
@@ -783,14 +794,25 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // reminder email / PDF can quote "Sourcing wrapped on pace · 12 days"
     // without re-deriving the benchmark. Null for the current/last phase (still
     // running, no duration yet) and for any phase without a typical duration.
+    // Each entry also carries the canonical typical-duration benchmark its
+    // on_pace verdict was measured against (typical_min_days/typical_max_days,
+    // null for phases with no typical duration). Without it, phase_history says
+    // "12 days, on pace" but a consumer can't render "12 of a typical 14–28
+    // days" without a *second* lookup keyed by the raw phase code — the exact
+    // re-derivation the label/on_pace fields were surfaced to avoid. Making the
+    // entry self-describing lets the planned reminder email / PDF (roadmap #4)
+    // quote a fully-benchmarked dated milestone ("Sourcing ran Apr 22 → May 4 ·
+    // 12 of a typical 14–28 days") straight off phase_history. Same
+    // one-source-of-truth rationale as `label` (v1.22) and `on_pace` (v1.23);
+    // nested inside phase_history, so the existing 404-leak test covers it.
     const phaseHistory = phaseHistorySorted.map((entry, i) => {
       const next = phaseHistorySorted[i + 1];
+      const typical = PUBLIC_STATUS_TYPICAL_DURATION[entry.phase] ?? null;
       let durationDays: number | null = null;
       let onPace: boolean | null = null;
       if (next) {
         const ms = new Date(next.entered_at).getTime() - new Date(entry.entered_at).getTime();
         if (!Number.isNaN(ms) && ms >= 0) durationDays = Math.floor(ms / 86_400_000);
-        const typical = PUBLIC_STATUS_TYPICAL_DURATION[entry.phase];
         if (typical && durationDays !== null) onPace = durationDays <= typical.max_days;
       }
       return {
@@ -798,6 +820,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         label: PUBLIC_STATUS_PHASES[entry.phase]?.label ?? entry.phase,
         entered_at: entry.entered_at,
         duration_days: durationDays,
+        typical_min_days: typical?.min_days ?? null,
+        typical_max_days: typical?.max_days ?? null,
         on_pace: onPace,
       };
     });
