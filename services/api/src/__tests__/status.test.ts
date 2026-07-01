@@ -619,6 +619,30 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak last_activity_at / last_activity_summary / search_urgency on 404 (no recency or pacing hints to anonymous callers)', async () => {
+    // last_activity_at and last_activity_summary disclose exactly when the
+    // search was last touched and a verbatim description of that update;
+    // search_urgency discloses the intake pacing enum. All three are keyed to
+    // a real search, so observing any of them on the 404 path would let an
+    // anonymous caller infer that the search exists (and, for the activity
+    // fields, when it was last active). They belong only on the verified
+    // success shape, like every other personalized field.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-967',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('last_activity_at' in body), 'last_activity_at must not leak on 404');
+    assert.ok(!('last_activity_summary' in body), 'last_activity_summary must not leak on 404');
+    assert.ok(!('search_urgency' in body), 'search_urgency must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
