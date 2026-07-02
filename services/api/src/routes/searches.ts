@@ -198,6 +198,13 @@ function isProgressingPhase(status: string): boolean {
 // useful for 90 days *after* the search closes, not just during it.
 const PLACEMENT_FOLLOWUP_DAYS = 90;
 
+// Terminal states in which the target-start countdown is suppressed: once a
+// search is placed, cancelled, or closed without a fill, a "(3 weeks away)"
+// countdown to the client's target start date is either moot or misleading.
+// Module-level (like PUBLIC_ACTIVITY_TYPES) so it isn't re-allocated on every
+// status request — same hoist-the-constant hygiene as PHASE_TOTAL.
+const TARGET_TERMINAL_STATUSES = new Set(['placed', 'cancelled', 'closed_no_fill']);
+
 // Compute the progress-bar fill percentage. Forward progressing phases
 // get intra-phase smoothing (using `days_in_phase` against the typical
 // max) so the bar moves day-to-day rather than jumping 12.5% at phase
@@ -919,7 +926,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // state (placed/cancelled/closed_no_fill) — exactly the cases where the
     // page already suppresses the countdown. Same one-source-of-truth and
     // null-in-terminal rationale as engagement_age_days and placement_age_days.
-    const TARGET_TERMINAL_STATUSES = new Set(['placed', 'cancelled', 'closed_no_fill']);
+    // (TARGET_TERMINAL_STATUSES is a module-level constant — see its definition.)
     let daysUntilTargetStart: number | null = null;
     if (row.target_start_date && !TARGET_TERMINAL_STATUSES.has(row.status)) {
       const targetTs = new Date(row.target_start_date).getTime();
