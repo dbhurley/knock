@@ -1371,10 +1371,23 @@
                     // every completed phase landed within benchmark, otherwise
                     // "N of M on pace". Suppressed until at least one phase has
                     // completed, so a day-1 search doesn't read "0 of 0 on pace".
-                    if (typeof d.phases_on_pace === 'number' && done > 0) {
-                        summaryText += ' · ' + (d.phases_on_pace >= done
+                    // Denominator is the count of *benchmarkable* completed
+                    // phases (a non-null on_pace in phase_history), not
+                    // phases_completed. The two differ only on a successful
+                    // placement: phases_completed counts the whole 8-phase
+                    // journey, but the terminal `placed` phase has no typical
+                    // duration and so can never be "on pace" — using it as the
+                    // denominator would understate a flawless run as "7 of 8 on
+                    // pace" instead of "all on pace" on the exact celebration
+                    // moment. Falls back to `done` when phase_history is absent
+                    // (older API), where the in-flight denominator already matches.
+                    var benchmarkedDone = Array.isArray(d.phase_history)
+                        ? d.phase_history.filter(function (h) { return h && typeof h.on_pace === 'boolean'; }).length
+                        : done;
+                    if (typeof d.phases_on_pace === 'number' && benchmarkedDone > 0) {
+                        summaryText += ' · ' + (d.phases_on_pace >= benchmarkedDone
                             ? 'all on pace'
-                            : d.phases_on_pace + ' of ' + done + ' on pace');
+                            : d.phases_on_pace + ' of ' + benchmarkedDone + ' on pace');
                     }
                     // Append the forward-looking placement horizon so the
                     // collapsed summary carries a fresh time-to-placement

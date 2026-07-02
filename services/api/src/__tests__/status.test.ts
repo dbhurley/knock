@@ -643,6 +643,51 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak identity fields on 404 (no school/position disclosure to anonymous callers)', async () => {
+    // position_title, school_name, and school_location name the actual client
+    // and role — the most directly-identifying fields on the success shape.
+    // They must only appear behind email verification: observing any of them
+    // on the 404 path would let an anonymous caller confirm a search exists AND
+    // learn which school and role it is. Previously covered only by the generic
+    // no-`data` assertion; locked here alongside the rest of the response surface.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-965',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('position_title' in body), 'position_title must not leak on 404');
+    assert.ok(!('school_name' in body), 'school_name must not leak on 404');
+    assert.ok(!('school_location' in body), 'school_location must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
+  it('does not leak phase fields on 404 (no current-phase disclosure to anonymous callers)', async () => {
+    // phase_label, phase_step, and next_milestone_label all reveal where the
+    // search currently is in the journey. Like every other progress signal they
+    // are keyed by the current phase, so observing them on the 404 path would let
+    // an anonymous caller infer both that the search exists AND its current phase.
+    // They belong only on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-963',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('phase_label' in body), 'phase_label must not leak on 404');
+    assert.ok(!('phase_step' in body), 'phase_step must not leak on 404');
+    assert.ok(!('next_milestone_label' in body), 'next_milestone_label must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
