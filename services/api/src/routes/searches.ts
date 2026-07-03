@@ -855,6 +855,27 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       phasesOnPace = phaseHistory.filter((h) => h.on_pace === true).length;
     }
 
+    // Canonical count of *benchmarkable* completed phases — the denominator the
+    // "N of M on pace" pace tally is measured against (phases_on_pace being the
+    // numerator). A completed phase is benchmarkable when phase_history carries a
+    // non-null on_pace for it, i.e. it has both an actual duration and a typical
+    // benchmark to compare against. This differs from phases_completed only on a
+    // successful placement: phases_completed counts the whole 8-phase journey,
+    // but the terminal `placed` phase has no typical duration and so can never be
+    // "on pace" — using phases_completed as the denominator would understate a
+    // flawless run as "7 of 8 on pace" instead of "all on pace" on the exact
+    // celebration moment (the v1.35 fix). The status page already derives this
+    // count client-side by filtering phase_history for a boolean on_pace;
+    // surfacing it server-side makes it one source of truth (same rationale as
+    // phases_on_pace / phases_completed) so the planned reminder email / PDF
+    // (roadmap #4) can quote "3 of 3 completed phases on pace" with the same
+    // denominator the page shows without re-deriving it. Null in the same
+    // non-progressing/negative-terminal states as phases_on_pace.
+    let phasesBenchmarked: number | null = null;
+    if (PUBLIC_STATUS_FORWARD.includes(row.status)) {
+      phasesBenchmarked = phaseHistory.filter((h) => h.on_pace !== null).length;
+    }
+
     // Post-placement 90-day follow-up window. Only populated when the
     // search has actually landed — terminal-but-not-placed statuses leave
     // these fields null so the status page can keep its placed-state
@@ -982,6 +1003,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phases_completed: phasesCompleted,
         phases_remaining: phasesRemaining,
         phases_on_pace: phasesOnPace,
+        phases_benchmarked: phasesBenchmarked,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
         next_milestone_eta: nextMilestoneEta,

@@ -512,6 +512,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak phases_benchmarked on 404 (no pacing-tally hints to anonymous callers)', async () => {
+    // phases_benchmarked is the canonical count of *benchmarkable* completed
+    // phases — the denominator the "N of M on pace" tally is measured against.
+    // Like phases_on_pace it is keyed by how far the search has advanced, so
+    // observing it on the 404 path would let an anonymous caller infer both that
+    // the search exists AND how many phases it has completed against benchmark.
+    // Belongs only on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-978',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('phases_benchmarked' in body), 'phases_benchmarked must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak phases_remaining on 404 (no progress hints to anonymous callers)', async () => {
     // phases_remaining is the forward-looking complement to phases_completed —
     // the count of phases the search has not yet finished. Like every other
