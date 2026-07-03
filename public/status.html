@@ -1379,11 +1379,16 @@
                     // duration and so can never be "on pace" — using it as the
                     // denominator would understate a flawless run as "7 of 8 on
                     // pace" instead of "all on pace" on the exact celebration
-                    // moment. Falls back to `done` when phase_history is absent
+                    // moment. Prefers the API's canonical phases_benchmarked
+                    // (one source of truth, shared with the planned reminder
+                    // email / PDF), falls back to filtering phase_history
+                    // locally, then to `done` when phase_history is absent
                     // (older API), where the in-flight denominator already matches.
-                    var benchmarkedDone = Array.isArray(d.phase_history)
-                        ? d.phase_history.filter(function (h) { return h && typeof h.on_pace === 'boolean'; }).length
-                        : done;
+                    var benchmarkedDone = (typeof d.phases_benchmarked === 'number')
+                        ? d.phases_benchmarked
+                        : (Array.isArray(d.phase_history)
+                            ? d.phase_history.filter(function (h) { return h && typeof h.on_pace === 'boolean'; }).length
+                            : done);
                     if (typeof d.phases_on_pace === 'number' && benchmarkedDone > 0) {
                         summaryText += ' · ' + (d.phases_on_pace >= benchmarkedDone
                             ? 'all on pace'
