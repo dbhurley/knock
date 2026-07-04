@@ -1390,7 +1390,14 @@
                             ? d.phase_history.filter(function (h) { return h && typeof h.on_pace === 'boolean'; }).length
                             : done);
                     if (typeof d.phases_on_pace === 'number' && benchmarkedDone > 0) {
-                        summaryText += ' · ' + (d.phases_on_pace >= benchmarkedDone
+                        // Prefer the API's canonical all_phases_on_pace boolean
+                        // for the "all on pace" verdict (one source of truth,
+                        // shared with the planned reminder email / PDF); fall
+                        // back to comparing the two integers on older API versions.
+                        var allOnPace = (typeof d.all_phases_on_pace === 'boolean')
+                            ? d.all_phases_on_pace
+                            : d.phases_on_pace >= benchmarkedDone;
+                        summaryText += ' · ' + (allOnPace
                             ? 'all on pace'
                             : d.phases_on_pace + ' of ' + benchmarkedDone + ' on pace');
                     }

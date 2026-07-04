@@ -190,6 +190,20 @@ function isProgressingPhase(status: string): boolean {
   return PUBLIC_STATUS_FORWARD.includes(status) && status !== 'placed';
 }
 
+// A search is on a "forward" phase when it's anywhere in the journey list —
+// including the terminal `placed`, unlike isProgressingPhase() which excludes
+// it. This is the exact predicate that gates the phase *count* fields
+// (phases_completed, phases_on_pace, phases_benchmarked): a successful
+// placement has finished phases to tally, but is no longer progressing. It was
+// open-coded as `PUBLIC_STATUS_FORWARD.includes(status)` in three places;
+// naming it makes the "forward incl. placed" vs "progressing excl. placed"
+// distinction explicit so the two notions can't be confused at a call site.
+// Same one-source-of-truth rationale as isProgressingPhase() — pure refactor,
+// byte-identical to the inline expression.
+function isForwardPhase(status: string): boolean {
+  return PUBLIC_STATUS_FORWARD.includes(status);
+}
+
 // Length of Janet's post-placement follow-up window. The explainer copy
 // already commits to "Janet stays in touch through the candidate's first
 // 90 days" — surfacing the exact remaining-days countdown turns the
@@ -674,7 +688,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     let phasesCompleted: number | null = null;
     if (row.status === 'placed') {
       phasesCompleted = PHASE_TOTAL; // journey fully complete
-    } else if (PUBLIC_STATUS_FORWARD.includes(row.status)) {
+    } else if (isForwardPhase(row.status)) {
       phasesCompleted = Math.max(0, phase.step - 1);
     }
 
@@ -850,30 +864,54 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // in-flight progressing phases and a completed placement; the
     // non-progressing/negative-terminal states (on_hold, cancelled,
     // closed_no_fill) fall through to null, matching phases_completed.
+    //
+    // phases_on_pace and phases_benchmarked are tallied together in a single
+    // pass over phase_history: an on_pace===true entry is always also
+    // on_pace!==null, so folding both counters in one loop guarantees the
+    // numerator can never exceed the denominator (phasesOnPace <=
+    // phasesBenchmarked by construction) and scans the array once instead of
+    // twice — same one-scan hygiene as the v1.25 merged activity query.
+    // phases_benchmarked is the *benchmarkable* denominator the "N of M on
+    // pace" tally is measured against — a completed phase is benchmarkable
+    // when its phase_history entry carries a non-null on_pace (it has both an
+    // actual duration and a typical benchmark). It differs from phases_completed
+    // only on a successful placement, where the terminal `placed` phase has no
+    // typical duration and so can never be "on pace"; using phases_completed as
+    // the denominator would understate a flawless run as "7 of 8 on pace"
+    // instead of "all on pace" on the exact celebration moment (the v1.35 fix).
     let phasesOnPace: number | null = null;
-    if (PUBLIC_STATUS_FORWARD.includes(row.status)) {
-      phasesOnPace = phaseHistory.filter((h) => h.on_pace === true).length;
+    let phasesBenchmarked: number | null = null;
+    if (isForwardPhase(row.status)) {
+      let onPaceCount = 0;
+      let benchmarkedCount = 0;
+      for (const h of phaseHistory) {
+        if (h.on_pace !== null) {
+          benchmarkedCount += 1;
+          if (h.on_pace === true) onPaceCount += 1;
+        }
+      }
+      phasesOnPace = onPaceCount;
+      phasesBenchmarked = benchmarkedCount;
     }
 
-    // Canonical count of *benchmarkable* completed phases — the denominator the
-    // "N of M on pace" pace tally is measured against (phases_on_pace being the
-    // numerator). A completed phase is benchmarkable when phase_history carries a
-    // non-null on_pace for it, i.e. it has both an actual duration and a typical
-    // benchmark to compare against. This differs from phases_completed only on a
-    // successful placement: phases_completed counts the whole 8-phase journey,
-    // but the terminal `placed` phase has no typical duration and so can never be
-    // "on pace" — using phases_completed as the denominator would understate a
-    // flawless run as "7 of 8 on pace" instead of "all on pace" on the exact
-    // celebration moment (the v1.35 fix). The status page already derives this
-    // count client-side by filtering phase_history for a boolean on_pace;
-    // surfacing it server-side makes it one source of truth (same rationale as
-    // phases_on_pace / phases_completed) so the planned reminder email / PDF
-    // (roadmap #4) can quote "3 of 3 completed phases on pace" with the same
-    // denominator the page shows without re-deriving it. Null in the same
-    // non-progressing/negative-terminal states as phases_on_pace.
-    let phasesBenchmarked: number | null = null;
-    if (PUBLIC_STATUS_FORWARD.includes(row.status)) {
-      phasesBenchmarked = phaseHistory.filter((h) => h.on_pace !== null).length;
+    // Canonical "flawless run so far" boolean — true when every benchmarkable
+    // completed phase landed on pace (phases_on_pace === phases_benchmarked with
+    // at least one benchmarkable phase). It's the single-boolean form of the
+    // "· all on pace" suffix the collapsed journey summary renders, which the
+    // status page currently derives client-side by comparing the two integers
+    // (phases_on_pace >= phases_benchmarked). Surfacing it server-side makes
+    // that positive celebration signal one source of truth (same rationale as
+    // phases_on_pace / phases_benchmarked): the planned reminder email / PDF
+    // (roadmap #4) can quote "every completed phase is on pace" off one boolean
+    // instead of re-comparing the numerator and denominator itself. Null — not
+    // false — whenever there's nothing benchmarkable to judge yet (phases_
+    // benchmarked null or 0, i.e. a non-forward state or a search still in its
+    // opening phase), so a brand-new search never reads a misleading "all on
+    // pace" before any phase has actually completed. Positive-only by design,
+    // mirroring current_phase_on_pace and the archive's on-pace tags.
+    let allPhasesOnPace: boolean | null = null;
+    if (phasesBenchmarked !== null && phasesBenchmarked > 0) {
+      allPhasesOnPace = phasesOnPace === phasesBenchmarked;
     }
 
     // Post-placement 90-day follow-up window. Only populated when the
@@ -1004,6 +1042,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phases_remaining: phasesRemaining,
         phases_on_pace: phasesOnPace,
         phases_benchmarked: phasesBenchmarked,
+        all_phases_on_pace: allPhasesOnPace,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
         next_milestone_eta: nextMilestoneEta,

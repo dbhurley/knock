@@ -533,6 +533,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak all_phases_on_pace on 404 (no pacing-verdict hints to anonymous callers)', async () => {
+    // all_phases_on_pace is the canonical "every completed phase landed on
+    // pace" boolean — the single-boolean form of the collapsed journey
+    // summary's "· all on pace" suffix. Like phases_on_pace / phases_benchmarked
+    // it is keyed by how far the search has advanced and how it tracked against
+    // benchmark, so observing it on the 404 path would let an anonymous caller
+    // infer both that the search exists AND that it has completed phases on
+    // pace. Belongs only on the verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-972',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('all_phases_on_pace' in body), 'all_phases_on_pace must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak phases_remaining on 404 (no progress hints to anonymous callers)', async () => {
     // phases_remaining is the forward-looking complement to phases_completed —
     // the count of phases the search has not yet finished. Like every other
