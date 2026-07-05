@@ -120,6 +120,9 @@
         .phase-pacing .pace-tag { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 8px; background: #f3ead0; color: #8a6d1f; font-size: 0.68rem; font-weight: 600; vertical-align: middle; }
         .completion-window { font-size: 0.78rem; color: #6a5b1f; margin-top: 0.25rem; }
         .completion-window strong { color: #b8860b; font-weight: 600; }
+        .last-completed { font-size: 0.78rem; color: #6a5b1f; margin-top: 0.25rem; }
+        .last-completed strong { color: #8a6d1f; font-weight: 600; }
+        .last-completed .pace-tag { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 8px; background: #f3ead0; color: #8a6d1f; font-size: 0.68rem; font-weight: 600; vertical-align: middle; }
 
         .relative-age { color: #999; font-weight: 400; margin-left: 0.4rem; font-size: 0.82rem; }
         .velocity-summary.warm { color: #b8860b; font-weight: 600; }
@@ -241,6 +244,7 @@
                     <div class="progress-track" id="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100"><div class="progress-fill" id="progress-fill"></div></div>
                     <div class="progress-meta" id="progress-meta"></div>
                     <div class="phase-pacing" id="phase-pacing" style="display:none"></div>
+                    <div class="last-completed" id="last-completed" style="display:none"></div>
                     <div class="completion-window" id="completion-window" style="display:none"></div>
                 </div>
 
@@ -748,6 +752,11 @@
                 // client revisits most. is_stalled already carries the negative
                 // signal when a phase has truly gone quiet.
                 if (d.current_phase_on_pace === true && d.is_stalled !== true) {
+                    // Separate the tag from the pacing text with a real space so
+                    // screen readers announce "…days) on pace" rather than
+                    // running the two together into "…days)on pace" (the CSS
+                    // margin gives only visual separation, not an accessible one).
+                    pacingEl.appendChild(document.createTextNode(' '));
                     const pace = document.createElement('span');
                     pace.className = 'pace-tag';
                     pace.textContent = 'on pace';
@@ -756,6 +765,39 @@
                 pacingEl.style.display = 'block';
             } else {
                 pacingEl.style.display = 'none';
+            }
+
+            // Always-visible "just wrapped" glance — the most-recently-completed
+            // phase, sourced from the API's canonical latest_completed_phase.
+            // The full durational archive lives in the collapsed journey section;
+            // this surfaces just the single latest completion inline so a return
+            // visitor gets a fresh, concrete backward glance ("Scoping wrapped
+            // on pace · 8 days") without expanding anything. Prefers the API
+            // field; falls back to the last completed phase_history entry on
+            // older API versions, and hides entirely when neither is present
+            // (e.g. a search still in its opening phase).
+            const lastCompletedEl = document.getElementById('last-completed');
+            let lcp = d.latest_completed_phase;
+            if (!lcp && Array.isArray(d.phase_history)) {
+                for (let i = d.phase_history.length - 1; i >= 0; i--) {
+                    const h = d.phase_history[i];
+                    if (h && typeof h.duration_days === 'number') { lcp = h; break; }
+                }
+            }
+            if (lcp && lcp.label && typeof lcp.duration_days === 'number') {
+                const dd = lcp.duration_days;
+                lastCompletedEl.innerHTML = 'Just wrapped: <strong>' + lcp.label +
+                    '</strong> · ' + dd + ' day' + (dd === 1 ? '' : 's');
+                if (lcp.on_pace === true) {
+                    lastCompletedEl.appendChild(document.createTextNode(' '));
+                    const pace = document.createElement('span');
+                    pace.className = 'pace-tag';
+                    pace.textContent = 'on pace';
+                    lastCompletedEl.appendChild(pace);
+                }
+                lastCompletedEl.style.display = 'block';
+            } else {
+                lastCompletedEl.style.display = 'none';
             }
 
             document.getElementById('num-identified').textContent = d.candidates_identified;

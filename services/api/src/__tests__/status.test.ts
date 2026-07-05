@@ -731,6 +731,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak latest_completed_phase on 404 (no journey-progress disclosure to anonymous callers)', async () => {
+    // latest_completed_phase names the most-recently-finished phase plus its
+    // actual duration and on-pace verdict — a direct signal of how far a search
+    // has advanced and how it tracked against benchmark. Like phase_history and
+    // the phase-count fields it is keyed by the search's progress, so observing
+    // it on the 404 path would let an anonymous caller infer both that the
+    // search exists AND where it is in the journey. It belongs only on the
+    // verified success shape.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-961',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('latest_completed_phase' in body), 'latest_completed_phase must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".

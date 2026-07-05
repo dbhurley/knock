@@ -847,6 +847,49 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       };
     });
 
+    // Canonical summary of the most-recently-completed phase — the last
+    // phase_history entry that has actually finished (a non-null duration_days;
+    // the current/last phase is still running and so is skipped). It's the one
+    // entry the planned status-change reminder email (roadmap #4) most wants to
+    // quote: when a search advances, the natural line is "your search just moved
+    // to Sourcing — Scoping wrapped on pace · 8 days", which otherwise forces the
+    // consumer to re-scan phase_history for the last entry carrying a duration.
+    // Surfacing it here makes that read one source of truth — same rationale as
+    // phases_completed / all_phases_on_pace — and gives the status page a
+    // fresh, always-visible "just wrapped" glance without expanding the journey
+    // archive. Carries the same self-describing benchmark fields as its
+    // phase_history entry (label, typical_min/max_days, on_pace). Null until at
+    // least one phase has completed (a search still in its opening phase has no
+    // finished phase yet), and null in the same non-forward states where
+    // phase_history carries no completed entry. Nested-shape parity with
+    // phase_history, so the existing phase_history 404-leak test already covers it.
+    let latestCompletedPhase:
+      | {
+          phase: string;
+          label: string;
+          entered_at: string;
+          duration_days: number;
+          typical_min_days: number | null;
+          typical_max_days: number | null;
+          on_pace: boolean | null;
+        }
+      | null = null;
+    for (let i = phaseHistory.length - 1; i >= 0; i--) {
+      const h = phaseHistory[i];
+      if (h.duration_days !== null) {
+        latestCompletedPhase = {
+          phase: h.phase,
+          label: h.label,
+          entered_at: h.entered_at,
+          duration_days: h.duration_days,
+          typical_min_days: h.typical_min_days,
+          typical_max_days: h.typical_max_days,
+          on_pace: h.on_pace,
+        };
+        break;
+      }
+    }
+
     // Canonical count of *completed* phases that landed on pace — the positive
     // aggregate companion to phases_completed (v1.21) and the per-entry on_pace
     // flag (v1.23). The status page's journey archive already shows a gold "on
@@ -1066,6 +1109,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         engagement_age_days: engagementAgeDays,
         engagement_age_weeks: engagementAgeWeeks,
         phase_history: phaseHistory,
+        latest_completed_phase: latestCompletedPhase,
         target_start_date: row.target_start_date,
         days_until_target_start: daysUntilTargetStart,
         weeks_until_target_start: weeksUntilTargetStart,
