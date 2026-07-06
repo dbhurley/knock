@@ -740,7 +740,19 @@
                     typeof d.phase_duration_typical.max_days === 'number') {
                     const min = d.phase_duration_typical.min_days;
                     const max = d.phase_duration_typical.max_days;
-                    line += ' (typically ' + min + '–' + max + ' days)';
+                    // Fold the canonical within-phase completion percent into the
+                    // same parenthetical as the typical range when the API supplies
+                    // it — "typically 14–28 days · ~64% in" turns the anchorless day
+                    // count into a glanceable "how far through this phase am I" read
+                    // that walks forward every visit. One source of truth: prefers
+                    // the API's phase_percent (shared with the planned reminder
+                    // email / PDF); the segment simply doesn't append on older API
+                    // versions or terminal/non-progressing phases where it's null.
+                    let paren = 'typically ' + min + '–' + max + ' days';
+                    if (typeof d.phase_percent === 'number') {
+                        paren += ' · ~' + d.phase_percent + '% in';
+                    }
+                    line += ' (' + paren + ')';
                 }
                 pacingEl.textContent = line;
                 // Positive "on pace" tag on the current phase, mirroring the

@@ -240,10 +240,10 @@ function computeProgressPercent(
     if (typical && typeof daysInPhase === 'number' && daysInPhase >= 0) {
       intra = Math.min(1, daysInPhase / typical.max_days);
     }
-    const combined = ((phaseStep - 1) + intra) / 8;
+    const combined = ((phaseStep - 1) + intra) / PHASE_TOTAL;
     return Math.max(0, Math.min(100, Math.round(combined * 100)));
   }
-  return Math.min(100, Math.round((phaseStep / 8) * 100));
+  return Math.min(100, Math.round((phaseStep / PHASE_TOTAL) * 100));
 }
 
 // Sum the typical duration of the remaining progressing phases (including the
@@ -595,6 +595,28 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
       const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
       if (typical) currentPhaseOnPace = daysInPhase <= typical.max_days;
+    }
+
+    // Canonical within-current-phase completion percent (0–100). It's the
+    // intra-phase fraction computeProgressPercent already blends into the
+    // whole-journey bar (days_in_phase against the phase's typical-max),
+    // surfaced on its own so a consumer can answer "how far through *this*
+    // phase am I?" — a genuinely distinct signal from progress_percent (the
+    // whole 8-phase journey) and from days_in_phase (which is anchorless
+    // without dividing by the typical max). Clamped to [0, 100] so an
+    // over-typical phase caps at 100 rather than running past it. One source
+    // of truth: the status page can render "~64% through this phase" on the
+    // pacing line, and the planned reminder email / PDF (roadmap #4) can quote
+    // the same integer instead of re-deriving it from days_in_phase and the
+    // typical range. Null in exactly the same states as current_phase_on_pace
+    // — terminal/non-progressing/placed phases, or any phase without a typical
+    // duration — so a paused or closed search never reads a misleading percent.
+    let phasePercent: number | null = null;
+    if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
+      const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
+      if (typical) {
+        phasePercent = Math.round(Math.min(1, Math.max(0, daysInPhase / typical.max_days)) * 100);
+      }
     }
 
     const progressPercent = computeProgressPercent(phase.step, row.status, daysInPhase);
@@ -1099,6 +1121,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         weeks_since_last_activity: weeksSinceLastActivity,
         phase_duration_typical: PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null,
         current_phase_on_pace: currentPhaseOnPace,
+        phase_percent: phasePercent,
         estimated_completion_window: completionWindow
           ? { earliest: completionWindow.earliest, latest: completionWindow.latest }
           : null,
