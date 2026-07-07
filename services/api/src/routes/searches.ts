@@ -526,6 +526,29 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     else if (delta <= -2)       velocityTrend = 'cooling';
     else                        velocityTrend = 'steady';
 
+    // Canonical "the pipeline just came alive this week" flag — true on a
+    // progressing search whose previous 7-day window was empty but whose
+    // current one has activity (activity_count_prev_7d === 0 && activity_count_
+    // last_7d > 0). It's the precise condition the status page uses to swap the
+    // velocity chip's "up from 0" for the friendlier "ramping up" copy, which
+    // it previously derived client-side from the raw prev-window count. Note
+    // this is broader than velocity_trend === 'accelerating': a first week with
+    // a single update lands the trend on 'steady' (delta 1 < the ±2 dead-band)
+    // yet is still genuinely a ramp from quiet, so a lone client-side
+    // `prev === 0` check inside the accelerating branch under-fired. Surfacing
+    // the boolean makes that read one source of truth (same rationale as
+    // current_phase_on_pace / velocity_trend): the planned reminder email / PDF
+    // (roadmap #4) can open a first-activity note ("your search is ramping up —
+    // first updates logged this week") off the same flag the chip uses instead
+    // of re-deriving it. False in terminal/non-progressing states and whenever
+    // there was prior-week activity, so a mid-engagement resume-after-quiet
+    // still reads through the ordinary velocity_trend rather than a fresh-start
+    // ramp. The status page prefers this field and falls back to the local
+    // prev-window check only on older API versions.
+    const isRampingUp = isProgressingPhase(row.status)
+      && activityCountPrev7d === 0
+      && activityCountLast7d > 0;
+
     // Time spent in the current phase — a simple, honest pacing signal.
     // Only computed when status_changed_at is populated and the search is
     // still in a progressing phase (terminal/non-progressing → null).
@@ -1152,6 +1175,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         activity_count_prev_7d: activityCountPrev7d,
         activity_count_total: activityCountTotal,
         velocity_trend: velocityTrend,
+        is_ramping_up: isRampingUp,
         activity_breakdown: activityBreakdown,
         recent_activities: activities.map((a) => ({
           activity_type: a.activity_type,
