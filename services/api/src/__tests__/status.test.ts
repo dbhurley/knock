@@ -366,6 +366,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak is_ramping_up on 404 (no activity-tempo hints to anonymous callers)', async () => {
+    // is_ramping_up is the server-computed "the pipeline came alive this week"
+    // flag (empty prior 7-day window, active current one). Like the velocity
+    // and activity counts it derives from, it must appear only on the verified
+    // success shape: observing it on the 404 path would let an anonymous caller
+    // infer both that the search exists AND that it just started seeing
+    // activity. Belongs behind email verification like every other field.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-981',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('is_ramping_up' in body), 'is_ramping_up must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak phase_history on 404 (no transition-archive hints to anonymous callers)', async () => {
     // phase_history is the API's per-phase entry-date archive (one entry per
     // phase the search has been in, ordered ascending). The array must only
