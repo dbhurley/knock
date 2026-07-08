@@ -416,6 +416,16 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
 
     const phase = PUBLIC_STATUS_PHASES[row.status] ?? { label: row.status, step: 0 };
 
+    // Typical-duration benchmark for the *current* phase, resolved once. The
+    // same PUBLIC_STATUS_TYPICAL_DURATION[row.status] lookup was previously
+    // repeated across current_phase_on_pace, phase_percent, the next-milestone
+    // ETA, and the phase_duration_typical response field — this hoist gives
+    // them one shared value, matching the handler's "compute once" hygiene
+    // (nowMs, the resolved search id, the single GROUP BY scan). Null for
+    // terminal/non-progressing phases with no typical duration; byte-identical
+    // to the prior per-site `?? null` lookups.
+    const currentPhaseTypical = PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null;
+
     // Compute the next milestone (label only — clients don't see internal codes).
     const forwardIdx = PUBLIC_STATUS_FORWARD.indexOf(row.status);
     const nextStatus = forwardIdx >= 0 && forwardIdx < PUBLIC_STATUS_FORWARD.length - 1
@@ -616,8 +626,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // typical 14–28 days" off this boolean instead of re-deriving the benchmark.
     let currentPhaseOnPace: boolean | null = null;
     if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
-      const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
-      if (typical) currentPhaseOnPace = daysInPhase <= typical.max_days;
+      if (currentPhaseTypical) currentPhaseOnPace = daysInPhase <= currentPhaseTypical.max_days;
     }
 
     // Canonical within-current-phase completion percent (0–100). It's the
@@ -636,9 +645,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // duration — so a paused or closed search never reads a misleading percent.
     let phasePercent: number | null = null;
     if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
-      const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
-      if (typical) {
-        phasePercent = Math.round(Math.min(1, Math.max(0, daysInPhase / typical.max_days)) * 100);
+      if (currentPhaseTypical) {
+        phasePercent = Math.round(Math.min(1, Math.max(0, daysInPhase / currentPhaseTypical.max_days)) * 100);
       }
     }
 
@@ -691,9 +699,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     let nextMilestoneEta: string | null = null;
     let daysUntilNextMilestone: number | null = null;
     if (nextStatus && isProgressingPhase(row.status)) {
-      const typical = PUBLIC_STATUS_TYPICAL_DURATION[row.status];
-      if (typical) {
-        const remaining = Math.max(0, typical.max_days - Math.max(0, daysInPhase ?? 0));
+      if (currentPhaseTypical) {
+        const remaining = Math.max(0, currentPhaseTypical.max_days - Math.max(0, daysInPhase ?? 0));
         nextMilestoneEta = new Date(nowMs + remaining * 86_400_000).toISOString();
         daysUntilNextMilestone = remaining;
       }
@@ -1142,7 +1149,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         days_in_phase: daysInPhase,
         days_since_last_activity: daysSinceLastActivity,
         weeks_since_last_activity: weeksSinceLastActivity,
-        phase_duration_typical: PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null,
+        phase_duration_typical: currentPhaseTypical,
         current_phase_on_pace: currentPhaseOnPace,
         phase_percent: phasePercent,
         estimated_completion_window: completionWindow
