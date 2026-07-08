@@ -807,8 +807,22 @@
             }
             if (lcp && lcp.label && typeof lcp.duration_days === 'number') {
                 const dd = lcp.duration_days;
+                // Quote the pace benchmark inline when the API supplies it on
+                // latest_completed_phase (typical_min_days/typical_max_days, v1.34):
+                // "Scoping · 8 of a typical 5–14 days" makes the single most-
+                // glanceable backward signal self-benchmarking, matching the
+                // reminder-email phrasing and the journey archive's own rows,
+                // instead of a bare "8 days" a return visitor can't anchor.
+                // Falls back to the bare day count when the benchmark is absent
+                // (older API, or a phase with no typical duration).
+                let ddText;
+                if (typeof lcp.typical_min_days === 'number' && typeof lcp.typical_max_days === 'number') {
+                    ddText = dd + ' of a typical ' + lcp.typical_min_days + '–' + lcp.typical_max_days + ' days';
+                } else {
+                    ddText = dd + ' day' + (dd === 1 ? '' : 's');
+                }
                 lastCompletedEl.innerHTML = 'Just wrapped: <strong>' + lcp.label +
-                    '</strong> · ' + dd + ' day' + (dd === 1 ? '' : 's');
+                    '</strong> · ' + ddText;
                 if (lcp.on_pace === true) {
                     lastCompletedEl.appendChild(document.createTextNode(' '));
                     const pace = document.createElement('span');

@@ -89,6 +89,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('activity_count_last_7d' in body), 'velocity field must not leak on 404');
   });
 
+  it('does not leak activity_count_prev_7d on 404 (no week-over-week tempo hints to anonymous callers)', async () => {
+    // The previous-window count is the other half of the week-over-week
+    // velocity signal (with activity_count_last_7d / velocity_trend /
+    // is_ramping_up, all already covered). It's the one week-over-week field
+    // that lacked a dedicated 404-leak assertion — observing it on the
+    // unauthenticated path would let an anonymous caller infer both that the
+    // search exists AND how its tempo was moving a week ago.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-998',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('data' in body), 'must not include data on 404');
+    assert.ok(!('activity_count_prev_7d' in body), 'prev-window velocity field must not leak on 404');
+  });
+
   it('does not leak is_stalled or phase_explainer on 404 (no pacing/state hints to anonymous callers)', async () => {
     // is_stalled is a derived pacing signal; phase_explainer is the API's
     // canonical phase-copy. Both belong only on the verified success shape.
