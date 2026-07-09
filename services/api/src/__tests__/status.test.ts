@@ -816,6 +816,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak progress_percent on 404 (no journey-progress disclosure to anonymous callers)', async () => {
+    // progress_percent is the 0–100 whole-journey completion figure the status
+    // page renders as the phase progress bar — a direct signal of how far a
+    // search has advanced. It had no dedicated 404-leak assertion, relying only
+    // on the generic no-`data` check; observing it on the 404 path would let an
+    // anonymous caller infer both that the search exists AND roughly how far
+    // along it is. Locks the no-enumeration contract for it in CI the same way
+    // the phase-count and identity fields already do.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-959',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('progress_percent' in body), 'progress_percent must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".

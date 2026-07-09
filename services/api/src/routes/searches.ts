@@ -176,6 +176,16 @@ const PUBLIC_STATUS_FORWARD: string[] = [
 // every downstream count at once instead of leaving a hardcoded `8` behind.
 const PHASE_TOTAL = PUBLIC_STATUS_FORWARD.length;
 
+// Milliseconds in a day. The status handler does day-granularity date math in
+// ~10 places (days_in_phase, days_since_last_activity, engagement_age_days,
+// each phase_history duration, placement_age_days, the completion-window and
+// next-milestone ETA projections, the target-start countdown). They all
+// open-coded the same `86_400_000` literal; naming it once means the ms→days
+// unit lives in a single place. Pure readability/one-source-of-truth hygiene —
+// byte-identical to the literal — matching the PHASE_TOTAL and
+// TARGET_TERMINAL_STATUSES constant hoists.
+const DAY_MS = 86_400_000;
+
 // A search is "progressing" when it's in one of the forward phases but hasn't
 // yet reached the `placed` terminal — i.e. still moving toward a placement.
 // This exact predicate (`in the forward list AND not placed`) gates every
@@ -290,8 +300,8 @@ function computeCompletionWindow(
     }
   }
   return {
-    earliest: new Date(nowMs + minDaysLeft * 86_400_000).toISOString(),
-    latest:   new Date(nowMs + maxDaysLeft * 86_400_000).toISOString(),
+    earliest: new Date(nowMs + minDaysLeft * DAY_MS).toISOString(),
+    latest:   new Date(nowMs + maxDaysLeft * DAY_MS).toISOString(),
     min_days: minDaysLeft,
     max_days: maxDaysLeft,
   };
@@ -566,7 +576,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     if (row.status_changed_at && isProgressingPhase(row.status)) {
       const ms = nowMs - new Date(row.status_changed_at).getTime();
       if (!Number.isNaN(ms) && ms >= 0) {
-        daysInPhase = Math.floor(ms / 86_400_000);
+        daysInPhase = Math.floor(ms / DAY_MS);
       }
     }
 
@@ -581,7 +591,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     if (latest?.created_at) {
       const ms = nowMs - new Date(latest.created_at).getTime();
       if (!Number.isNaN(ms) && ms >= 0) {
-        daysSinceLastActivity = Math.floor(ms / 86_400_000);
+        daysSinceLastActivity = Math.floor(ms / DAY_MS);
       }
     }
 
@@ -701,7 +711,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     if (nextStatus && isProgressingPhase(row.status)) {
       if (currentPhaseTypical) {
         const remaining = Math.max(0, currentPhaseTypical.max_days - Math.max(0, daysInPhase ?? 0));
-        nextMilestoneEta = new Date(nowMs + remaining * 86_400_000).toISOString();
+        nextMilestoneEta = new Date(nowMs + remaining * DAY_MS).toISOString();
         daysUntilNextMilestone = remaining;
       }
     }
@@ -770,7 +780,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     let engagementAgeDays: number | null = null;
     if (row.created_at) {
       const ms = nowMs - new Date(row.created_at).getTime();
-      if (!Number.isNaN(ms) && ms >= 0) engagementAgeDays = Math.floor(ms / 86_400_000);
+      if (!Number.isNaN(ms) && ms >= 0) engagementAgeDays = Math.floor(ms / DAY_MS);
     }
 
     // Canonical weeks rounding of engagement_age_days — the days→weeks read for
@@ -885,7 +895,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       let onPace: boolean | null = null;
       if (next) {
         const ms = new Date(next.entered_at).getTime() - new Date(entry.entered_at).getTime();
-        if (!Number.isNaN(ms) && ms >= 0) durationDays = Math.floor(ms / 86_400_000);
+        if (!Number.isNaN(ms) && ms >= 0) durationDays = Math.floor(ms / DAY_MS);
         if (typical && durationDays !== null) onPace = durationDays <= typical.max_days;
       }
       return {
@@ -1051,16 +1061,16 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       const placedTs = new Date(row.status_changed_at).getTime();
       if (!Number.isNaN(placedTs)) {
         placedAt = row.status_changed_at;
-        const untilTs = placedTs + PLACEMENT_FOLLOWUP_DAYS * 86_400_000;
+        const untilTs = placedTs + PLACEMENT_FOLLOWUP_DAYS * DAY_MS;
         placementFollowupUntil = new Date(untilTs).toISOString();
         placementFollowupDaysRemaining = Math.max(
           0,
-          Math.ceil((untilTs - nowMs) / 86_400_000),
+          Math.ceil((untilTs - nowMs) / DAY_MS),
         );
         if (placementFollowupDaysRemaining >= 14) {
           placementFollowupWeeksRemaining = daysToWeeks(placementFollowupDaysRemaining);
         }
-        placementAgeDays = Math.max(0, Math.floor((nowMs - placedTs) / 86_400_000));
+        placementAgeDays = Math.max(0, Math.floor((nowMs - placedTs) / DAY_MS));
         if (placementAgeDays >= 14) {
           placementAgeWeeks = daysToWeeks(placementAgeDays);
         }
@@ -1085,7 +1095,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     if (row.target_start_date && !TARGET_TERMINAL_STATUSES.has(row.status)) {
       const targetTs = new Date(row.target_start_date).getTime();
       if (!Number.isNaN(targetTs)) {
-        daysUntilTargetStart = Math.round((targetTs - nowMs) / 86_400_000);
+        daysUntilTargetStart = Math.round((targetTs - nowMs) / DAY_MS);
       }
     }
 
