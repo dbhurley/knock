@@ -411,6 +411,20 @@
                 .replace(/\r?\n/g, '\\n');
         }
 
+        // Canonical days→weeks rounding for the page's *fallback* paths — the
+        // frontend mirror of the API's daysToWeeks() helper (services/api/src/
+        // routes/searches.ts). Every weeks-valued field (engagement_age_weeks,
+        // placement_age_weeks, weeks_until_next_milestone, weeks_until_target_start,
+        // weeks_since_last_activity, estimated_weeks_remaining, placement_followup_
+        // weeks_remaining) is preferred straight from the API; this is only used
+        // when an older API version omits the canonical integer, so the page still
+        // rounds identically to the server rather than open-coding the same
+        // `Math.max(1, Math.round(days / 7))` at eight call sites. Same
+        // one-source-of-truth rationale as the server-side extraction.
+        function daysToWeeks(days) {
+            return Math.max(1, Math.round(days / 7));
+        }
+
         function fmtDate(iso) {
             if (!iso) return '—';
             try {
@@ -655,7 +669,7 @@
                             if (daysUntil >= 14) {
                                 const w = (typeof d.weeks_until_next_milestone === 'number')
                                     ? d.weeks_until_next_milestone
-                                    : Math.max(1, Math.round(daysUntil / 7));
+                                    : daysToWeeks(daysUntil);
                                 countdown = '~' + w + ' week' + (w === 1 ? '' : 's');
                             } else {
                                 countdown = '~' + daysUntil + ' day' + (daysUntil === 1 ? '' : 's');
@@ -713,8 +727,8 @@
                                 wLo = ewr.min_weeks;
                                 wHi = ewr.max_weeks;
                             } else {
-                                wLo = Math.max(1, Math.round(lo / 7));
-                                wHi = Math.max(wLo, Math.round(hi / 7));
+                                wLo = daysToWeeks(lo);
+                                wHi = Math.max(wLo, daysToWeeks(hi));
                             }
                             return wLo === wHi
                                 ? '~' + wHi + ' week' + (wHi === 1 ? '' : 's')
@@ -883,7 +897,7 @@
                 } else if (placedAgeDays >= 14) {
                     const wks = (typeof d.placement_age_weeks === 'number')
                         ? d.placement_age_weeks
-                        : Math.max(1, Math.round(placedAgeDays / 7));
+                        : daysToWeeks(placedAgeDays);
                     ageTag = '~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago';
                 } else {
                     ageTag = placedAgeDays + ' day' + (placedAgeDays === 1 ? '' : 's') + ' ago';
@@ -905,7 +919,7 @@
                     if (remaining >= 14) {
                         const wks = (typeof d.placement_followup_weeks_remaining === 'number')
                             ? d.placement_followup_weeks_remaining
-                            : Math.max(1, Math.round(remaining / 7));
+                            : daysToWeeks(remaining);
                         remainingStr = '~' + wks + ' week' + (wks === 1 ? '' : 's');
                     } else {
                         remainingStr = remaining + ' day' + (remaining === 1 ? '' : 's');
@@ -944,7 +958,7 @@
                         // the same rounding locally on older API versions.
                         const wks = (typeof d.engagement_age_weeks === 'number')
                             ? d.engagement_age_weeks
-                            : Math.max(1, Math.round(ageDays / 7));
+                            : daysToWeeks(ageDays);
                         openedRelEl.textContent = '(~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago)';
                     } else {
                         openedRelEl.textContent = '(' + ageDays + ' day' + (ageDays === 1 ? '' : 's') + ' ago)';
@@ -1008,7 +1022,7 @@
                         } else if (dsl >= 14) {
                             const wks = (typeof d.weeks_since_last_activity === 'number')
                                 ? d.weeks_since_last_activity
-                                : Math.max(1, Math.round(dsl / 7));
+                                : daysToWeeks(dsl);
                             recency = 'latest ~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago';
                         } else {
                             recency = 'latest ' + dsl + ' day' + (dsl === 1 ? '' : 's') + ' ago';
@@ -1296,7 +1310,10 @@
                         // and fall back to local rounding on older API versions.
                         const wks = (typeof d.weeks_until_target_start === 'number')
                             ? d.weeks_until_target_start
-                            : Math.round(days / 7);
+                            // days > 30 in this branch, so the floor-at-1 in
+                            // daysToWeeks never triggers — byte-identical to the
+                            // prior bare Math.round(days / 7).
+                            : daysToWeeks(days);
                         countdownEl.textContent = '(~' + wks + ' week' + (wks === 1 ? '' : 's') + ' away)';
                     }
                 }
