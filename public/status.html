@@ -300,7 +300,7 @@
             </div>
 
             <div class="activity-card" id="activity-card">
-                <div class="label"><span class="icon-glyph" id="activity-icon" style="display:none"></span>Latest update</div>
+                <div class="label"><span class="icon-glyph" id="activity-icon" style="display:none" aria-hidden="true"></span>Latest update</div>
                 <div class="summary" id="activity-summary"></div>
                 <div class="when" id="activity-when"></div>
                 <ul class="timeline" id="activity-timeline" style="display:none"></ul>
@@ -1564,7 +1564,12 @@
                 setRelativeWithTooltip(document.getElementById('activity-when'), d.last_activity_at);
                 // Headline card carries the same activity-type glyph as the
                 // timeline rows below it — small touch, but the visual rhythm
-                // breaks if the headline is the only entry without one.
+                // breaks if the headline is the only entry without one. The
+                // span is aria-hidden in the markup: it's a decorative glyph, so
+                // a screen reader should announce "Latest update", not "star
+                // Latest update". (The timeline rows render their glyph via CSS
+                // content:attr(data-icon), which SRs already skip.) Same
+                // a11y-as-stickiness rationale as the v1.20/v1.26 passes.
                 const iconEl = document.getElementById('activity-icon');
                 const headlineType = (acts[0] && acts[0].activity_type) || null;
                 const glyph = headlineType ? ACTIVITY_ICONS[headlineType] : null;

@@ -838,6 +838,33 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak raw scheduling/timestamp fields on 404 (no date disclosure to anonymous callers)', async () => {
+    // target_start_date is the raw ISO date the client wants the role filled —
+    // the most directly-revealing scheduling field, even more so than the
+    // days_until/weeks_until countdowns derived from it. status_changed_at and
+    // opened_at are the raw phase-entry and engagement-open timestamps. All
+    // three had no dedicated 404-leak assertion, relying only on the generic
+    // no-`data` check; observing any of them on the 404 path would let an
+    // anonymous caller infer both that the search exists AND when the client
+    // wants the role filled / when the search last moved / how long it has run.
+    // Locks the no-enumeration contract for them in CI the same way the v1.35
+    // identity fields and v1.42 progress_percent tests already do.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-957',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('target_start_date' in body), 'target_start_date must not leak on 404');
+    assert.ok(!('status_changed_at' in body), 'status_changed_at must not leak on 404');
+    assert.ok(!('opened_at' in body), 'opened_at must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
