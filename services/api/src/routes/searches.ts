@@ -244,7 +244,7 @@ function computeProgressPercent(
   daysInPhase: number | null,
 ): number {
   if (phaseStep <= 0) return 0;
-  if (PUBLIC_STATUS_FORWARD.includes(status) && status !== 'placed') {
+  if (isProgressingPhase(status)) {
     const typical = PUBLIC_STATUS_TYPICAL_DURATION[status];
     let intra = 0;
     if (typical && typeof daysInPhase === 'number' && daysInPhase >= 0) {
