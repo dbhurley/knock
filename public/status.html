@@ -1454,13 +1454,23 @@
                     // phases strictly before the current step; on a successful
                     // placement the final phase is itself complete, so count the
                     // whole journey.
+                    // Denominator prefers the API's canonical phase_total (one
+                    // source of truth, shared with the tab title / progress bar /
+                    // ARIA label above, which already read d.phase_total) and
+                    // falls back to the local FORWARD_PHASES.length only on older
+                    // API versions — so a future phase added to the journey can't
+                    // leave this summary reading a different total than the rest
+                    // of the page.
+                    const phaseTotal = (typeof d.phase_total === 'number' && d.phase_total > 0)
+                        ? d.phase_total
+                        : FORWARD_PHASES.length;
                     const done = (typeof d.phases_completed === 'number')
                         ? d.phases_completed
                         : (d.status === 'placed'
-                            ? FORWARD_PHASES.length
+                            ? phaseTotal
                             : Math.max(0, d.phase_step - 1));
                     let summaryText = 'The full search journey · ' +
-                        done + ' of ' + FORWARD_PHASES.length + ' phases complete';
+                        done + ' of ' + phaseTotal + ' phases complete';
                     // Append a glanceable pace tally so the collapsed summary
                     // carries a fresh positive signal without the client
                     // expanding the section. Prefer the API's canonical
