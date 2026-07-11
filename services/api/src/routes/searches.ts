@@ -321,6 +321,18 @@ function daysToWeeks(days: number): number {
   return Math.max(1, Math.round(days / 7));
 }
 
+// Fortnight threshold: a span reads in weeks once it's at or past two weeks,
+// and in exact days below that (where the precise number matters more than a
+// glanceable "~N weeks"). Every days→weeks field on the status response gates
+// on this same 14-day boundary (weeks_since_last_activity, estimated_weeks_
+// remaining, weeks_until_next_milestone, engagement_age_weeks, placement_
+// followup_weeks_remaining, placement_age_weeks); it was open-coded as the
+// literal `14` at six sites. Naming it once means the fortnight rule lives in a
+// single place — same constant-hoist hygiene as DAY_MS and PHASE_TOTAL, and
+// byte-identical to the prior literal. (The target-start countdown deliberately
+// uses a wider `> 30` "more than a month out" boundary, not this one.)
+const WEEKS_THRESHOLD_DAYS = 14;
+
 // Activity types we surface to clients. Internal-only types (e.g. fee_paid,
 // note_added) are filtered out so we never leak commercial or candidate detail.
 const PUBLIC_ACTIVITY_TYPES = new Set([
@@ -606,7 +618,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // where the page still shows exact days, and null when there's no public
     // activity yet — mirroring days_since_last_activity.
     let weeksSinceLastActivity: number | null = null;
-    if (daysSinceLastActivity !== null && daysSinceLastActivity >= 14) {
+    if (daysSinceLastActivity !== null && daysSinceLastActivity >= WEEKS_THRESHOLD_DAYS) {
       weeksSinceLastActivity = daysToWeeks(daysSinceLastActivity);
     }
 
@@ -682,7 +694,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // the window is null or under a fortnight, where the page shows days rather
     // than weeks; rounding mirrors fmtSpan exactly so the two never disagree.
     let estimatedWeeksRemaining: { min_weeks: number; max_weeks: number } | null = null;
-    if (estimatedDaysRemaining && estimatedDaysRemaining.max_days >= 14) {
+    if (estimatedDaysRemaining && estimatedDaysRemaining.max_days >= WEEKS_THRESHOLD_DAYS) {
       const minWeeks = daysToWeeks(estimatedDaysRemaining.min_days);
       const maxWeeks = Math.max(minWeeks, daysToWeeks(estimatedDaysRemaining.max_days));
       estimatedWeeksRemaining = { min_weeks: minWeeks, max_weeks: maxWeeks };
@@ -730,7 +742,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // the page renders the exact "(in ~N days)"). The page prefers this field
     // and falls back to local rounding only on older API versions.
     let weeksUntilNextMilestone: number | null = null;
-    if (typeof daysUntilNextMilestone === 'number' && daysUntilNextMilestone >= 14) {
+    if (typeof daysUntilNextMilestone === 'number' && daysUntilNextMilestone >= WEEKS_THRESHOLD_DAYS) {
       weeksUntilNextMilestone = daysToWeeks(daysUntilNextMilestone);
     }
 
@@ -793,7 +805,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // quote "your search has been running about 11 weeks" off the same integer the
     // page renders. Null under a fortnight, where the page still shows exact days.
     let engagementAgeWeeks: number | null = null;
-    if (engagementAgeDays !== null && engagementAgeDays >= 14) {
+    if (engagementAgeDays !== null && engagementAgeDays >= WEEKS_THRESHOLD_DAYS) {
       engagementAgeWeeks = daysToWeeks(engagementAgeDays);
     }
 
@@ -1067,11 +1079,11 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           0,
           Math.ceil((untilTs - nowMs) / DAY_MS),
         );
-        if (placementFollowupDaysRemaining >= 14) {
+        if (placementFollowupDaysRemaining >= WEEKS_THRESHOLD_DAYS) {
           placementFollowupWeeksRemaining = daysToWeeks(placementFollowupDaysRemaining);
         }
         placementAgeDays = Math.max(0, Math.floor((nowMs - placedTs) / DAY_MS));
-        if (placementAgeDays >= 14) {
+        if (placementAgeDays >= WEEKS_THRESHOLD_DAYS) {
           placementAgeWeeks = daysToWeeks(placementAgeDays);
         }
       }

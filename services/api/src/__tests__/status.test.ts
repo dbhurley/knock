@@ -865,6 +865,30 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak days_in_phase on 404 (no in-phase-duration hints to anonymous callers)', async () => {
+    // days_in_phase is the anchorless count of days the search has spent in its
+    // current phase — the raw pacing signal the "In this phase for N days"
+    // line and the current_phase_on_pace / phase_percent fields are all derived
+    // from. It was a success-shape field with no dedicated 404-leak assertion,
+    // relying only on the generic no-`data` check. Observing it on the 404 path
+    // would let an anonymous caller infer both that the search exists AND how
+    // long it has been sitting in its current phase. Locks the no-enumeration
+    // contract for it in CI the same way the v1.42 progress_percent and v1.43
+    // raw-date tests already do.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-955',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('days_in_phase' in body), 'days_in_phase must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
