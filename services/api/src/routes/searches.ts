@@ -1063,10 +1063,24 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // "your placement landed about 11 weeks ago" off the same integer the page shows.
     // Null when not placed or inside the first fortnight, where the page still shows
     // the exact day count.
+    // `placement_followup_percent` is the canonical within-window completion
+    // percent (0–100 integer): how far through the 90-day post-placement
+    // follow-up window the search has progressed (placement_age_days measured
+    // against PLACEMENT_FOLLOWUP_DAYS), clamped to [0, 100]. It's the
+    // post-placement analogue of phase_percent (which does the same for the
+    // current in-flight phase): the placement card stays live for a full 90
+    // days, and neither the day counters (which only tell the client the raw
+    // count) nor the placement-age tag answers "how far through the follow-up
+    // window am I?". Surfacing it makes the placement card carry a number that
+    // moves on every return visit across the whole window — a fresh reason to
+    // revisit — and lets the planned post-placement reminder email / PDF
+    // (roadmap #4) quote "16% through the follow-up window" off the same integer
+    // the card renders. Null unless placed, like the other placement fields.
     let placedAt: string | null = null;
     let placementFollowupUntil: string | null = null;
     let placementFollowupDaysRemaining: number | null = null;
     let placementFollowupWeeksRemaining: number | null = null;
+    let placementFollowupPercent: number | null = null;
     let placementAgeDays: number | null = null;
     let placementAgeWeeks: number | null = null;
     if (row.status === 'placed' && row.status_changed_at) {
@@ -1086,6 +1100,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         if (placementAgeDays >= WEEKS_THRESHOLD_DAYS) {
           placementAgeWeeks = daysToWeeks(placementAgeDays);
         }
+        placementFollowupPercent = Math.round(
+          Math.min(1, Math.max(0, placementAgeDays / PLACEMENT_FOLLOWUP_DAYS)) * 100,
+        );
       }
     }
 
@@ -1192,6 +1209,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         placement_followup_until: placementFollowupUntil,
         placement_followup_days_remaining: placementFollowupDaysRemaining,
         placement_followup_weeks_remaining: placementFollowupWeeksRemaining,
+        placement_followup_percent: placementFollowupPercent,
         placement_age_days: placementAgeDays,
         placement_age_weeks: placementAgeWeeks,
         candidates_identified: row.candidates_identified ?? 0,

@@ -425,6 +425,16 @@
             return Math.max(1, Math.round(days / 7));
         }
 
+        // Milliseconds in a day — the frontend mirror of the API's DAY_MS
+        // constant (services/api/src/routes/searches.ts). The page did
+        // day-granularity date math against the bare 86,400,000 literal at four
+        // fallback sites (fmtRelative's day bucket, and the placement-age /
+        // engagement-age / target-start countdowns' older-API fallbacks). Naming
+        // it once means the ms→days unit lives in a single place instead of being
+        // open-coded per site — same one-source-of-truth hygiene as the v1.42
+        // frontend daysToWeeks() helper and the server-side DAY_MS hoist.
+        const DAY_MS = 86400000;
+
         function fmtDate(iso) {
             if (!iso) return '—';
             try {
@@ -449,7 +459,7 @@
             // timeline and the server recency anchor in lockstep.
             const hr = Math.floor(diff / 3600000);
             if (hr < 24) return hr + ' hr ago';
-            const d = Math.floor(diff / 86400000);
+            const d = Math.floor(diff / DAY_MS);
             if (d < 7) return d + ' day' + (d === 1 ? '' : 's') + ' ago';
             return fmtDate(iso);
         }
@@ -884,7 +894,7 @@
                 // PDF) and fall back to local date math on older API versions.
                 const placedAgeDays = (typeof d.placement_age_days === 'number')
                     ? d.placement_age_days
-                    : Math.max(0, Math.floor((Date.now() - new Date(d.placed_at).getTime()) / 86_400_000));
+                    : Math.max(0, Math.floor((Date.now() - new Date(d.placed_at).getTime()) / DAY_MS));
                 // The placement card stays live for the full 90-day follow-up
                 // window, where "(76 days ago)" scans worse than "(~11 weeks ago)".
                 // Read in weeks past a fortnight (preferring the API's canonical
@@ -924,8 +934,16 @@
                     } else {
                         remainingStr = remaining + ' day' + (remaining === 1 ? '' : 's');
                     }
+                    // Glanceable "how far through the 90-day window" progress —
+                    // a number that walks forward on every return visit across
+                    // the whole follow-up window (from the API's canonical
+                    // placement_followup_percent; simply omitted on older API
+                    // versions or once the window has completed).
+                    const pctStr = (typeof d.placement_followup_percent === 'number' && remaining > 0)
+                        ? ' · <strong>' + d.placement_followup_percent + '%</strong> through the window'
+                        : '';
                     countdownText = remaining > 0
-                        ? "Janet's 90-day follow-up window runs through <strong>" + untilDate + '</strong> — <strong>' + remainingStr + '</strong> remaining.'
+                        ? "Janet's 90-day follow-up window runs through <strong>" + untilDate + '</strong> — <strong>' + remainingStr + '</strong> remaining' + pctStr + '.'
                         : "Janet's 90-day follow-up window completed on <strong>" + untilDate + '</strong>. Reach out anytime if anything else comes up.';
                 } else {
                     countdownText = "Janet stays in touch through the candidate's first 90 days.";
@@ -947,7 +965,7 @@
                 // fall back to local date math on older API versions.
                 const ageDays = (typeof d.engagement_age_days === 'number')
                     ? d.engagement_age_days
-                    : Math.floor((Date.now() - new Date(d.opened_at).getTime()) / 86_400_000);
+                    : Math.floor((Date.now() - new Date(d.opened_at).getTime()) / DAY_MS);
                 if (!isNaN(ageDays) && ageDays >= 0) {
                     if (ageDays === 0) {
                         openedRelEl.textContent = '(today)';
@@ -1289,7 +1307,7 @@
                 // fall back to local date math on older API versions.
                 const days = (typeof d.days_until_target_start === 'number')
                     ? d.days_until_target_start
-                    : Math.round((new Date(d.target_start_date).getTime() - Date.now()) / 86_400_000);
+                    : Math.round((new Date(d.target_start_date).getTime() - Date.now()) / DAY_MS);
                 if (!isNaN(days)) {
                     if (days < 0) {
                         // Honest urgency rather than a dismissive "(target passed)":
