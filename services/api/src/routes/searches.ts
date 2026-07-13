@@ -333,6 +333,16 @@ function daysToWeeks(days: number): number {
 // uses a wider `> 30` "more than a month out" boundary, not this one.)
 const WEEKS_THRESHOLD_DAYS = 14;
 
+// Week-over-week velocity dead-band: a categorical trend ('accelerating' /
+// 'cooling') only fires when the trailing-7-day activity count moved by at
+// least this many updates versus the prior 7-day window, so a single row of
+// day-to-day noise doesn't read as a surge or a drop. It was open-coded as the
+// bare literal `2` at the two gate sites (`delta >= 2`, `delta <= -2`); naming
+// it once means the dead-band lives in a single place — same constant-hoist
+// hygiene as DAY_MS / PHASE_TOTAL / WEEKS_THRESHOLD_DAYS / TARGET_TERMINAL_
+// STATUSES, and byte-identical to the prior literal.
+const VELOCITY_TREND_DEADBAND = 2;
+
 // Activity types we surface to clients. Internal-only types (e.g. fee_paid,
 // note_added) are filtered out so we never leak commercial or candidate detail.
 const PUBLIC_ACTIVITY_TYPES = new Set([
@@ -552,11 +562,19 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // can use these labels to swap one short visible chip ("up from 2 last
     // week" / "steady" / "down from 5 last week") without doing the math.
     let velocityTrend: 'accelerating' | 'steady' | 'cooling' | 'quiet';
+    // Signed week-over-week change in public-visible activity, surfaced as the
+    // canonical `activity_delta_7d` field below. velocity_trend (v1.17) and
+    // is_ramping_up (v1.40) are both derived from this same delta; exposing the
+    // raw magnitude completes the velocity family so the planned reminder email
+    // / PDF (roadmap #4) can quote "3 more updates than the week before" off one
+    // canonical integer instead of re-subtracting activity_count_last_7d and
+    // activity_count_prev_7d itself. Reuses the value already computed here for
+    // the trend classification — no extra work, one source of truth.
     const delta = activityCountLast7d - activityCountPrev7d;
     if (activityCountLast7d === 0 && activityCountPrev7d === 0) velocityTrend = 'quiet';
-    else if (delta >= 2)        velocityTrend = 'accelerating';
-    else if (delta <= -2)       velocityTrend = 'cooling';
-    else                        velocityTrend = 'steady';
+    else if (delta >= VELOCITY_TREND_DEADBAND)  velocityTrend = 'accelerating';
+    else if (delta <= -VELOCITY_TREND_DEADBAND) velocityTrend = 'cooling';
+    else                                        velocityTrend = 'steady';
 
     // Canonical "the pipeline just came alive this week" flag — true on a
     // progressing search whose previous 7-day window was empty but whose
@@ -1220,6 +1238,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         last_activity_summary: latest?.description ?? null,
         activity_count_last_7d: activityCountLast7d,
         activity_count_prev_7d: activityCountPrev7d,
+        activity_delta_7d: delta,
         activity_count_total: activityCountTotal,
         velocity_trend: velocityTrend,
         is_ramping_up: isRampingUp,
