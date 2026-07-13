@@ -325,6 +325,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak activity_delta_7d on 404 (no week-over-week tempo change to anonymous callers)', async () => {
+    // activity_delta_7d is the signed week-over-week change in public-visible
+    // activity (activity_count_last_7d − activity_count_prev_7d) — the raw
+    // magnitude the velocity family (velocity_trend, is_ramping_up) is derived
+    // from. It belongs only on the verified success shape: observing the
+    // integer on the 404 path would let an anonymous caller infer both that a
+    // search exists AND how its tempo is changing week over week, the same
+    // side-channel concern as activity_count_prev_7d / velocity_trend above.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-976',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('activity_delta_7d' in body), 'week-over-week delta must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak activity_breakdown on 404 (no per-type counts to anonymous callers)', async () => {
     // activity_breakdown is the cumulative per-type counts the public status
     // page renders as the "Engagement at a glance" strip. Observing the
