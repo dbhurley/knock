@@ -772,6 +772,31 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak last_activity_type or the raw status on 404 (no recency-type or current-phase hints to anonymous callers)', async () => {
+    // last_activity_type is the machine-readable enum of the most recent
+    // public activity (the canonical key roadmap #4's per-type reminder emails
+    // branch on); `status` is the raw current-phase code — the most directly
+    // phase-revealing field of all, even more so than the derived phase_label /
+    // phase_step already covered. Both are keyed to a real search, so observing
+    // either on the 404 path would let an anonymous caller infer that the search
+    // exists (and, for status, exactly which phase it's in / for
+    // last_activity_type what kind of update it last saw). They belong only on
+    // the verified success shape, like every other personalized field.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-953',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('last_activity_type' in body), 'last_activity_type must not leak on 404');
+    assert.ok(!('status' in body), 'raw status must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak identity fields on 404 (no school/position disclosure to anonymous callers)', async () => {
     // position_title, school_name, and school_location name the actual client
     // and role — the most directly-identifying fields on the success shape.

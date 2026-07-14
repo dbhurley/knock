@@ -1078,6 +1078,21 @@
                 && typeof d.activity_count_prev_7d === 'number') {
                 const trend = d.velocity_trend;
                 const prev = d.activity_count_prev_7d;
+                // Signed week-over-week magnitude from the canonical
+                // activity_delta_7d (v1.46, previously a pure API pre-pave with
+                // no page consumer). It lets the chip's description quote the
+                // *change* directly ("3 more than the week before") rather than
+                // only the prior-week absolute ("2 updates the week before"),
+                // the exact phrasing roadmap #4's reminder email wants — one
+                // source of truth instead of the page re-subtracting the two
+                // window counts. Null-safe: on older API versions missing the
+                // field, magSuffix() returns '' and the description is unchanged.
+                function magSuffix() {
+                    if (typeof d.activity_delta_7d !== 'number' || d.activity_delta_7d === 0) return '';
+                    const mag = Math.abs(d.activity_delta_7d);
+                    const dir = d.activity_delta_7d > 0 ? 'more' : 'fewer';
+                    return ' (' + mag + ' ' + dir + ' than the week before)';
+                }
                 // The chip's glyph + short text ("↑ up from 2") carries the
                 // signal visually; the same explanatory string is set as both
                 // the hover `title` and an explicit `aria-label` so a committee
@@ -1103,14 +1118,14 @@
                     } else {
                         velocityTrendEl.textContent = '↑ up from ' + prev;
                         chipDesc = prev + ' update' + (prev === 1 ? '' : 's')
-                            + ' the week before — pipeline is picking up';
+                            + ' the week before — pipeline is picking up' + magSuffix();
                     }
                     velocityTrendEl.style.display = 'inline-block';
                 } else if (trend === 'cooling') {
                     velocityTrendEl.classList.add('cooling');
                     velocityTrendEl.textContent = '↓ down from ' + prev;
                     chipDesc = prev + ' update' + (prev === 1 ? '' : 's')
-                        + ' the week before';
+                        + ' the week before' + magSuffix();
                     velocityTrendEl.style.display = 'inline-block';
                 } else if (trend === 'steady') {
                     velocityTrendEl.classList.add('steady');
