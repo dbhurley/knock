@@ -1236,6 +1236,20 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         search_urgency: row.search_urgency ?? null,
         last_activity_at: latest?.created_at ?? null,
         last_activity_summary: latest?.description ?? null,
+        // Machine-readable activity_type of the most recent public-visible
+        // activity, surfaced top-level alongside last_activity_at /
+        // last_activity_summary (both hoisted from the same `latest` row). The
+        // summary is free-text human copy ("Candidate presented to committee");
+        // the type is the canonical enum a consumer keys off. Pre-paves the
+        // per-type status-change reminder emails in roadmap #4 — the listener
+        // that turns a new activity into an outbound email ("a candidate was
+        // just presented" vs "a committee interview was scheduled") can branch
+        // on this one canonical field instead of reaching into
+        // recent_activities[0].activity_type. Same one-source-of-truth
+        // rationale as last_activity_at / last_activity_summary; null when
+        // there's no public activity yet, mirroring them. Belongs only on the
+        // verified success shape — covered by the same negative-path 404 test.
+        last_activity_type: latest?.activity_type ?? null,
         activity_count_last_7d: activityCountLast7d,
         activity_count_prev_7d: activityCountPrev7d,
         activity_delta_7d: delta,
