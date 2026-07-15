@@ -501,6 +501,21 @@
             // the next poll. Anchoring at first-load is the sticky semantic
             // we want: novelty persists for the entire viewing session.
             const commitMark = !!(opts && opts.commitHighWaterMark);
+
+            // Append a gold "on pace" tag to an element, preceded by a real
+            // space text node so a screen reader announces "…days) on pace"
+            // rather than running the two together into "…days)on pace" (the
+            // CSS margin gives only visual separation, not an accessible one).
+            // Shared by the current-phase pacing line and the "just wrapped"
+            // glance, which built the identical span inline before.
+            function appendPaceTag(el) {
+                el.appendChild(document.createTextNode(' '));
+                const pace = document.createElement('span');
+                pace.className = 'pace-tag';
+                pace.textContent = 'on pace';
+                el.appendChild(pace);
+            }
+
             document.getElementById('position-title').textContent = d.position_title || 'Executive Search';
             document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
             document.getElementById('ref-num').textContent = d.search_number;
@@ -796,16 +811,16 @@
                 // with no tag rather than reading as punitive on the row a
                 // client revisits most. is_stalled already carries the negative
                 // signal when a phase has truly gone quiet.
-                if (d.current_phase_on_pace === true && d.is_stalled !== true) {
-                    // Separate the tag from the pacing text with a real space so
-                    // screen readers announce "…days) on pace" rather than
-                    // running the two together into "…days)on pace" (the CSS
-                    // margin gives only visual separation, not an accessible one).
-                    pacingEl.appendChild(document.createTextNode(' '));
-                    const pace = document.createElement('span');
-                    pace.className = 'pace-tag';
-                    pace.textContent = 'on pace';
-                    pacingEl.appendChild(pace);
+                // Prefer the API's canonical is_on_track flag, which is exactly
+                // this AND (current_phase_on_pace === true && !is_stalled)
+                // computed server-side — one source of truth shared with the
+                // planned reminder email / PDF. Fall back to the local
+                // conjunction only on older API versions missing the field.
+                const onTrack = (typeof d.is_on_track === 'boolean')
+                    ? d.is_on_track
+                    : (d.current_phase_on_pace === true && d.is_stalled !== true);
+                if (onTrack) {
+                    appendPaceTag(pacingEl);
                 }
                 pacingEl.style.display = 'block';
             } else {
@@ -848,11 +863,7 @@
                 lastCompletedEl.innerHTML = 'Just wrapped: <strong>' + lcp.label +
                     '</strong> · ' + ddText;
                 if (lcp.on_pace === true) {
-                    lastCompletedEl.appendChild(document.createTextNode(' '));
-                    const pace = document.createElement('span');
-                    pace.className = 'pace-tag';
-                    pace.textContent = 'on pace';
-                    lastCompletedEl.appendChild(pace);
+                    appendPaceTag(lastCompletedEl);
                 }
                 lastCompletedEl.style.display = 'block';
             } else {

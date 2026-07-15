@@ -669,6 +669,28 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       if (currentPhaseTypical) currentPhaseOnPace = daysInPhase <= currentPhaseTypical.max_days;
     }
 
+    // Canonical single "is the search healthy right now?" boolean — the AND of
+    // the two pacing signals the status page already combines client-side to
+    // decide whether to render the gold "on pace" tag on the current-phase
+    // pacing line: current_phase_on_pace === true (the current phase hasn't
+    // slipped past its typical-max benchmark) AND !is_stalled (it hasn't gone
+    // quiet for a fortnight). Surfacing the combination here makes that read
+    // one source of truth (same rationale as all_phases_on_pace collapsing the
+    // phases_on_pace/phases_benchmarked comparison into one boolean): the
+    // planned status-change reminder email / PDF (roadmap #4) can open a
+    // reassuring "your search is on track" line off one flag instead of
+    // re-ANDing the two signals itself, and the page prefers this field for the
+    // gold-tag gate. Null in exactly the same states as current_phase_on_pace
+    // — terminal/non-progressing/placed phases, or any phase without a typical
+    // duration — so a paused, closed, or benchmark-less search never reads a
+    // misleading verdict. Positive-only by design like current_phase_on_pace:
+    // a phase that has slipped past its benchmark (current_phase_on_pace ===
+    // false) or gone quiet (is_stalled) reads false, not a bare absence.
+    let isOnTrack: boolean | null = null;
+    if (currentPhaseOnPace !== null) {
+      isOnTrack = currentPhaseOnPace === true && !isStalled;
+    }
+
     // Canonical within-current-phase completion percent (0–100). It's the
     // intra-phase fraction computeProgressPercent already blends into the
     // whole-journey bar (days_in_phase against the phase's typical-max),
@@ -1208,6 +1230,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         weeks_since_last_activity: weeksSinceLastActivity,
         phase_duration_typical: currentPhaseTypical,
         current_phase_on_pace: currentPhaseOnPace,
+        is_on_track: isOnTrack,
         phase_percent: phasePercent,
         estimated_completion_window: completionWindow
           ? { earliest: completionWindow.earliest, latest: completionWindow.latest }
