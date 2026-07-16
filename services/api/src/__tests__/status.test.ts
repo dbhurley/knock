@@ -958,6 +958,31 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak is_terminal / is_negative_terminal on 404 (no conclusion-state hints to anonymous callers)', async () => {
+    // is_terminal and is_negative_terminal are the canonical "has the search
+    // concluded?" booleans (v1.49) — is_terminal true for placed/cancelled/
+    // closed_no_fill, is_negative_terminal true for the placement-less subset.
+    // They're keyed to a real search's state, so observing either on the
+    // unauthenticated path would let an anonymous caller infer both that the
+    // search exists AND whether it has ended (and, for the negative flag,
+    // whether it ended without a placement). Locks the no-enumeration contract
+    // for them in CI the same way the v1.48 is_on_track and v1.44 days_in_phase
+    // tests already do for the other state-derived booleans.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-953',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('is_terminal' in body), 'is_terminal must not leak on 404');
+    assert.ok(!('is_negative_terminal' in body), 'is_negative_terminal must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
