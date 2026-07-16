@@ -394,7 +394,10 @@
         // API's module-level TARGET_TERMINAL_STATUSES). TERMINAL_STATUSES covers
         // every concluded state; NEGATIVE_TERMINAL_STATUSES is the subset that
         // ended without a placement — where a triumphant progress bar or a
-        // "you are here" journey pin would misread the moment.
+        // "you are here" journey pin would misread the moment. As of v1.49 the
+        // render branches prefer the API's canonical is_terminal /
+        // is_negative_terminal booleans and fall back to these arrays only on
+        // older API responses that don't carry the flags.
         const TERMINAL_STATUSES = ['placed', 'cancelled', 'closed_no_fill'];
         const NEGATIVE_TERMINAL_STATUSES = ['cancelled', 'closed_no_fill'];
 
@@ -566,7 +569,9 @@
             // "(8/8)" on a search that closed without a placement. Restored on
             // form reset.
             if (d.search_number && d.phase_label) {
-                const negTerminal = NEGATIVE_TERMINAL_STATUSES.indexOf(d.status) !== -1;
+                const negTerminal = (typeof d.is_negative_terminal === 'boolean')
+                    ? d.is_negative_terminal
+                    : (NEGATIVE_TERMINAL_STATUSES.indexOf(d.status) !== -1);
                 const stepBit = (!negTerminal && typeof d.phase_step === 'number' && d.phase_step > 0)
                     ? ' (' + d.phase_step + '/' + (d.phase_total || 8) + ')'
                     : '';
@@ -597,7 +602,9 @@
             // Knock-gold "100% complete" bar above what's actually a cancellation
             // or close-without-placement — a triumphant visual on the days the
             // client is most likely to be paying attention. Same suppression.
-            const isNegativeTerminal = NEGATIVE_TERMINAL_STATUSES.indexOf(d.status) !== -1;
+            const isNegativeTerminal = (typeof d.is_negative_terminal === 'boolean')
+                ? d.is_negative_terminal
+                : (NEGATIVE_TERMINAL_STATUSES.indexOf(d.status) !== -1);
             const isProgressing = typeof d.phase_step === 'number' && d.phase_step > 0
                 && !isNegativeTerminal;
             const trackEl = document.querySelector('.progress-track');
@@ -1080,7 +1087,9 @@
             // the page and the field is missing. A 'steady' label is the least
             // visually interesting state but still shipped because it gives the
             // client positive confirmation that the tempo hasn't dropped.
-            const terminalStatus = TERMINAL_STATUSES.indexOf(d.status) !== -1;
+            const terminalStatus = (typeof d.is_terminal === 'boolean')
+                ? d.is_terminal
+                : (TERMINAL_STATUSES.indexOf(d.status) !== -1);
             velocityTrendEl.className = 'velocity-trend';
             velocityTrendEl.style.display = 'none';
             velocityTrendEl.removeAttribute('title');
@@ -1242,7 +1251,9 @@
             // on a successful placement). Suppress the entire target row in
             // those cases so the page reads cleanly on the days that matter
             // most (right after a placement, cancellation, or close).
-            const isTerminal = TERMINAL_STATUSES.indexOf(d.status) !== -1;
+            const isTerminal = (typeof d.is_terminal === 'boolean')
+                ? d.is_terminal
+                : (TERMINAL_STATUSES.indexOf(d.status) !== -1);
             if (d.target_start_date && !isTerminal) {
                 document.getElementById('target-start').textContent = fmtDate(d.target_start_date);
                 document.getElementById('target-row').style.display = 'flex';
@@ -1375,7 +1386,9 @@
             const journeyDetails = document.getElementById('journey-details');
             const journeyList = document.getElementById('journey-list');
             const showJourney = typeof d.phase_step === 'number' && d.phase_step > 0
-                && NEGATIVE_TERMINAL_STATUSES.indexOf(d.status) === -1;
+                && ((typeof d.is_negative_terminal === 'boolean')
+                    ? !d.is_negative_terminal
+                    : NEGATIVE_TERMINAL_STATUSES.indexOf(d.status) === -1);
             if (showJourney) {
                 // Auto-expand + scroll into view when the URL hash points
                 // here. Pre-paves the planned status-change reminder email

@@ -229,6 +229,18 @@ const PLACEMENT_FOLLOWUP_DAYS = 90;
 // status request — same hoist-the-constant hygiene as PHASE_TOTAL.
 const TARGET_TERMINAL_STATUSES = new Set(['placed', 'cancelled', 'closed_no_fill']);
 
+// The subset of terminal states that concluded *without* a placement. A
+// negative terminal is where a triumphant progress bar or a "you are here"
+// journey pin would misread the moment — the status page already suppresses
+// those visuals for cancelled / closed_no_fill. Surfaced as the `is_negative_
+// terminal` flag so the frontend's five terminal-gate render branches (and the
+// planned reminder-email listener, which must send a wrap-up rather than a
+// progress nudge on a concluded search) read one server-side classification
+// instead of re-deriving it from an open-coded array. Same set as the status
+// page's own NEGATIVE_TERMINAL_STATUSES; `placed` is deliberately excluded
+// because a successful placement keeps its celebration visuals.
+const NEGATIVE_TERMINAL_STATUSES = new Set(['cancelled', 'closed_no_fill']);
+
 // Compute the progress-bar fill percentage. Forward progressing phases
 // get intra-phase smoothing (using `days_in_phase` against the typical
 // max) so the bar moves day-to-day rather than jumping 12.5% at phase
@@ -1200,6 +1212,24 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // intake response can never drift on the link format.
     const statusUrl = statusUrlFor(row.search_number);
 
+    // Canonical "has the search concluded?" classifications. `is_terminal` is
+    // true for any concluded state (placed / cancelled / closed_no_fill);
+    // `is_negative_terminal` is the subset that concluded without a placement.
+    // The status page derives both client-side today at five separate render
+    // sites (velocity-chip suppression, the target-start countdown, the step
+    // count, the progress bar, the journey pin) via open-coded arrays — the
+    // frontend mirror of the API's TARGET_TERMINAL_STATUSES hoist. Surfacing
+    // them server-side makes that "has it ended?" read one source of truth (the
+    // page prefers these fields and falls back to its local arrays only on older
+    // API versions) and pre-paves roadmap #4's reminder-email listener: a
+    // concluded search should get a wrap-up note rather than a progress/pacing
+    // nudge, and that branch keys off one canonical boolean instead of the cron
+    // re-deriving terminal state itself. Same one-source-of-truth rationale as
+    // is_on_track (v1.48) and all_phases_on_pace (v1.37). Always booleans (never
+    // null) — a search always either has or hasn't concluded.
+    const isTerminal = TARGET_TERMINAL_STATUSES.has(row.status);
+    const isNegativeTerminal = NEGATIVE_TERMINAL_STATUSES.has(row.status);
+
     reply.send({
       data: {
         search_number: row.search_number,
@@ -1208,6 +1238,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         school_name: row.school_name,
         school_location: [row.school_city, row.school_state].filter(Boolean).join(', ') || null,
         status: row.status,
+        is_terminal: isTerminal,
+        is_negative_terminal: isNegativeTerminal,
         phase_label: phase.label,
         phase_explainer: PUBLIC_STATUS_EXPLAINERS[row.status] ?? null,
         phase_step: phase.step,
