@@ -183,7 +183,7 @@ const PHASE_TOTAL = PUBLIC_STATUS_FORWARD.length;
 // open-coded the same `86_400_000` literal; naming it once means the ms→days
 // unit lives in a single place. Pure readability/one-source-of-truth hygiene —
 // byte-identical to the literal — matching the PHASE_TOTAL and
-// TARGET_TERMINAL_STATUSES constant hoists.
+// TERMINAL_STATUSES constant hoists.
 const DAY_MS = 86_400_000;
 
 // A search is "progressing" when it's in one of the forward phases but hasn't
@@ -222,12 +222,15 @@ function isForwardPhase(status: string): boolean {
 // useful for 90 days *after* the search closes, not just during it.
 const PLACEMENT_FOLLOWUP_DAYS = 90;
 
-// Terminal states in which the target-start countdown is suppressed: once a
-// search is placed, cancelled, or closed without a fill, a "(3 weeks away)"
-// countdown to the client's target start date is either moot or misleading.
-// Module-level (like PUBLIC_ACTIVITY_TYPES) so it isn't re-allocated on every
-// status request — same hoist-the-constant hygiene as PHASE_TOTAL.
-const TARGET_TERMINAL_STATUSES = new Set(['placed', 'cancelled', 'closed_no_fill']);
+// Every state in which a search has concluded — placed, cancelled, or closed
+// without a fill. Backs the `is_terminal` flag, and gates the target-start
+// countdown (a "(3 weeks away)" countdown to the client's target start date is
+// moot or misleading once the search has ended). Named for what the set *is*
+// rather than the one gate it originally served, matching its sibling
+// NEGATIVE_TERMINAL_STATUSES and the status page's own constant of the same
+// name. Module-level (like PUBLIC_ACTIVITY_TYPES) so it isn't re-allocated on
+// every status request — same hoist-the-constant hygiene as PHASE_TOTAL.
+const TERMINAL_STATUSES = new Set(['placed', 'cancelled', 'closed_no_fill']);
 
 // The subset of terminal states that concluded *without* a placement. A
 // negative terminal is where a triumphant progress bar or a "you are here"
@@ -532,38 +535,58 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // $3), not SQL NOW(), so they share the same instant as days_in_phase /
     // days_since_last_activity and a request straddling a UTC day boundary can't
     // hand back a 7-day count that disagrees with the recency anchor beside it.
+    //
+    // `activity_count_this_phase` counts the activity logged since the current
+    // phase began (created_at >= status_changed_at). It's a genuinely distinct
+    // axis from the three above: the weekly count is tempo, the cumulative
+    // total is depth, days_since_last_activity is recency — none of them answer
+    // "how much work has gone into the phase I'm in *right now*", which is the
+    // phase a return visitor cares about most. It rides on the same scan as a
+    // fourth FILTER (no extra query). The status_change row that entered the
+    // phase is counted deliberately: that transition is genuinely part of this
+    // phase's story and renders on the timeline dated inside it.
     const nowIso = new Date(nowMs).toISOString();
     const breakdownRows = await query<{
       activity_type: string;
       n: string;
       last_7d: string;
       prev_7d: string;
+      this_phase: string;
     }>(
       `SELECT activity_type,
               COUNT(*)::text AS n,
               COUNT(*) FILTER (WHERE created_at >= $3::timestamptz - INTERVAL '7 days')::text AS last_7d,
               COUNT(*) FILTER (WHERE created_at >= $3::timestamptz - INTERVAL '14 days'
-                                 AND created_at <  $3::timestamptz - INTERVAL '7 days')::text AS prev_7d
+                                 AND created_at <  $3::timestamptz - INTERVAL '7 days')::text AS prev_7d,
+              COUNT(*) FILTER (WHERE created_at >= $4::timestamptz)::text AS this_phase
        FROM search_activities
        WHERE search_id = $1
          AND activity_type = ANY($2::text[])
        GROUP BY activity_type`,
-      [row.id, activityTypes, nowIso],
+      [row.id, activityTypes, nowIso, row.status_changed_at],
     );
     // Per-type breakdown — types with a zero count are seeded so the frontend
-    // can decide what to show. The three scalar counts are the column sums.
+    // can decide what to show. The scalar counts are the column sums.
     const activityBreakdown: Record<string, number> = {};
     for (const t of PUBLIC_ACTIVITY_TYPES) activityBreakdown[t] = 0;
     let activityCountTotal = 0;
     let activityCountLast7d = 0;
     let activityCountPrev7d = 0;
+    let thisPhaseCount = 0;
     for (const r of breakdownRows) {
       const n = parseInt(r.n, 10);
       activityBreakdown[r.activity_type] = n;
       activityCountTotal += n;
       activityCountLast7d += parseInt(r.last_7d, 10);
       activityCountPrev7d += parseInt(r.prev_7d, 10);
+      thisPhaseCount += parseInt(r.this_phase, 10);
     }
+    // Null rather than 0 when there's no phase anchor to count from, so the
+    // page can tell "no updates in this phase" apart from "we can't say".
+    // (A null $4 makes the FILTER's comparison NULL, so the count is already 0
+    // in that case — this just gives it the honest shape.)
+    const activityCountThisPhase: number | null =
+      row.status_changed_at ? thisPhaseCount : null;
 
     // Categorical week-over-week trend. The thresholds are deliberately
     // generous: a "trend" only fires when both numbers are non-trivial AND
@@ -1171,9 +1194,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // state (placed/cancelled/closed_no_fill) — exactly the cases where the
     // page already suppresses the countdown. Same one-source-of-truth and
     // null-in-terminal rationale as engagement_age_days and placement_age_days.
-    // (TARGET_TERMINAL_STATUSES is a module-level constant — see its definition.)
+    // (TERMINAL_STATUSES is a module-level constant — see its definition.)
     let daysUntilTargetStart: number | null = null;
-    if (row.target_start_date && !TARGET_TERMINAL_STATUSES.has(row.status)) {
+    if (row.target_start_date && !TERMINAL_STATUSES.has(row.status)) {
       const targetTs = new Date(row.target_start_date).getTime();
       if (!Number.isNaN(targetTs)) {
         daysUntilTargetStart = Math.round((targetTs - nowMs) / DAY_MS);
@@ -1218,7 +1241,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // The status page derives both client-side today at five separate render
     // sites (velocity-chip suppression, the target-start countdown, the step
     // count, the progress bar, the journey pin) via open-coded arrays — the
-    // frontend mirror of the API's TARGET_TERMINAL_STATUSES hoist. Surfacing
+    // frontend mirror of the API's TERMINAL_STATUSES hoist. Surfacing
     // them server-side makes that "has it ended?" read one source of truth (the
     // page prefers these fields and falls back to its local arrays only on older
     // API versions) and pre-paves roadmap #4's reminder-email listener: a
@@ -1227,7 +1250,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // re-deriving terminal state itself. Same one-source-of-truth rationale as
     // is_on_track (v1.48) and all_phases_on_pace (v1.37). Always booleans (never
     // null) — a search always either has or hasn't concluded.
-    const isTerminal = TARGET_TERMINAL_STATUSES.has(row.status);
+    const isTerminal = TERMINAL_STATUSES.has(row.status);
     const isNegativeTerminal = NEGATIVE_TERMINAL_STATUSES.has(row.status);
 
     reply.send({
@@ -1309,6 +1332,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         activity_count_prev_7d: activityCountPrev7d,
         activity_delta_7d: delta,
         activity_count_total: activityCountTotal,
+        activity_count_this_phase: activityCountThisPhase,
         velocity_trend: velocityTrend,
         is_ramping_up: isRampingUp,
         activity_breakdown: activityBreakdown,

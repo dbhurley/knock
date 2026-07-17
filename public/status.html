@@ -391,7 +391,8 @@
         // Terminal-state classifications, hoisted so the several render
         // branches that gate on "has the search concluded?" share one
         // definition instead of open-coding the same array literal (mirrors the
-        // API's module-level TARGET_TERMINAL_STATUSES). TERMINAL_STATUSES covers
+        // API's module-level TERMINAL_STATUSES, which now shares this name).
+        // TERMINAL_STATUSES covers
         // every concluded state; NEGATIVE_TERMINAL_STATUSES is the subset that
         // ended without a placement — where a triumphant progress bar or a
         // "you are here" journey pin would misread the moment. As of v1.49 the
@@ -808,6 +809,18 @@
                         paren += ' · ~' + d.phase_percent + '% in';
                     }
                     line += ' (' + paren + ')';
+                }
+                // How much has actually happened *in this phase* — the canonical
+                // activity_count_this_phase. The Activity row already carries the
+                // weekly tempo and the cumulative depth, but neither tells the
+                // client what this phase itself has produced, which is what the
+                // pacing line is about. Pairs naturally with the day count beside
+                // it: "18 days (typically 14–28 days · ~64% in) · 6 updates".
+                // Omitted at zero (a phase that has just turned over shouldn't
+                // read "· 0 updates") and on older API versions where it's null.
+                if (typeof d.activity_count_this_phase === 'number' && d.activity_count_this_phase > 0) {
+                    line += ' · ' + d.activity_count_this_phase + ' update' +
+                        (d.activity_count_this_phase === 1 ? '' : 's');
                 }
                 pacingEl.textContent = line;
                 // Positive "on pace" tag on the current phase, mirroring the
