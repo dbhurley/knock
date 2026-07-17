@@ -283,6 +283,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak activity_count_this_phase on 404 (no per-phase effort hints to anonymous callers)', async () => {
+    // activity_count_this_phase is the count of public-visible activity logged
+    // since the current phase began — keyed to that phase, so observing it on
+    // the unauthenticated path would let an anonymous caller infer both that
+    // the search exists AND how much work its current phase has seen. Locks the
+    // no-enumeration contract for the field alongside the rest of the activity
+    // family (last_7d, prev_7d, delta_7d, total).
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-993',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('activity_count_this_phase' in body), 'per-phase count must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak next-phase preview fields on 404 (no roadmap hints to anonymous callers)', async () => {
     // next_phase_explainer and next_phase_duration_typical describe the
     // phase *after* the current one. Together they let a caller infer the
