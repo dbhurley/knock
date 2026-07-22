@@ -1252,6 +1252,19 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // null) — a search always either has or hasn't concluded.
     const isTerminal = TERMINAL_STATUSES.has(row.status);
     const isNegativeTerminal = NEGATIVE_TERMINAL_STATUSES.has(row.status);
+    // Canonical positive-terminal flag — the third and final member of the
+    // conclusion-state family alongside is_terminal / is_negative_terminal
+    // (v1.49): true only when the search reached a *successful* placement, the
+    // one terminal state that keeps its celebration visuals. It's exactly
+    // `is_terminal && !is_negative_terminal`, but surfacing it directly lets a
+    // consumer key the celebration branch off one canonical boolean rather than
+    // re-deriving the conjunction — the status page gates its placement card on
+    // `status === 'placed'` today, and roadmap #4's reminder-email listener
+    // wants to send a *celebration* wrap-up on placement vs the gentler
+    // debrief-or-restart tone is_negative_terminal already flags. Same
+    // one-source-of-truth rationale and always-boolean (never null) contract as
+    // its two siblings.
+    const isPlaced = isTerminal && !isNegativeTerminal;
 
     reply.send({
       data: {
@@ -1263,6 +1276,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         status: row.status,
         is_terminal: isTerminal,
         is_negative_terminal: isNegativeTerminal,
+        is_placed: isPlaced,
         phase_label: phase.label,
         phase_explainer: PUBLIC_STATUS_EXPLAINERS[row.status] ?? null,
         phase_step: phase.step,

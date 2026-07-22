@@ -918,7 +918,14 @@
             // concrete reason to revisit for 90 days after the placement.
             // Hidden gracefully if the API is rolled back ahead of the page.
             const placementCard = document.getElementById('placement-card');
-            if (d.status === 'placed' && d.placed_at) {
+            // Prefer the API's canonical is_placed boolean (one source of truth
+            // with the conclusion-state family is_terminal / is_negative_terminal,
+            // and shared with the planned celebration reminder email); fall back
+            // to the raw status check only on older API versions.
+            const isPlaced = (typeof d.is_placed === 'boolean')
+                ? d.is_placed
+                : (d.status === 'placed');
+            if (isPlaced && d.placed_at) {
                 const placedDate = fmtDate(d.placed_at);
                 // Prefer the API's canonical placement_age_days (one source of
                 // truth, shared with the planned post-placement reminder email /

@@ -1004,6 +1004,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak is_placed on 404 (no successful-placement hints to anonymous callers)', async () => {
+    // is_placed is the canonical positive-terminal boolean (v1.51) — the third
+    // member of the conclusion-state family, true only when a search reached a
+    // successful placement. It's keyed to a real search's state, so observing it
+    // on the unauthenticated path would let an anonymous caller infer both that
+    // the search exists AND that it concluded with a placement. Locks the
+    // no-enumeration contract for it in CI alongside its is_terminal /
+    // is_negative_terminal siblings above.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-951',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('is_placed' in body), 'is_placed must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
