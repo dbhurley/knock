@@ -747,6 +747,33 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
     }
 
+    // Canonical magnitude of how far the current phase has run *past* its
+    // typical-max benchmark — the exact-days companion to the current_phase_
+    // on_pace boolean, completing the pace family the way activity_delta_7d
+    // (v1.46) completed the velocity family. current_phase_on_pace answers "has
+    // the phase slipped past its benchmark?" as a boolean; this answers "by how
+    // much?" as a positive integer (days_in_phase − typical.max_days). Pure API
+    // pre-pave — no page consumer, because the status page's current-phase
+    // pacing line is positive-only by design (an over-typical phase stays
+    // neutral there rather than reading as punitive, and is_stalled already
+    // carries the negative signal when a phase has truly gone quiet). It's for
+    // roadmap #4's reminder-email listener, which can open a gentle "your search
+    // has run a few days longer than typical for this phase — reply if you'd
+    // like a check-in" line off this one canonical integer instead of
+    // re-subtracting days_in_phase and the typical range itself. Positive-only
+    // and null-otherwise: null in exactly the same states as current_phase_on_
+    // pace (terminal/non-progressing/placed phases, or any phase without a
+    // typical duration) AND whenever the phase is still on pace (days_in_phase
+    // <= typical.max_days), so a healthy search never carries a "0 days over" —
+    // it reads as a bare absence, matching the pre-pave-only precedent of the
+    // v1.34 typical_* and v1.46 activity_delta_7d fields.
+    let daysOverTypicalPhase: number | null = null;
+    if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
+      if (currentPhaseTypical && daysInPhase > currentPhaseTypical.max_days) {
+        daysOverTypicalPhase = daysInPhase - currentPhaseTypical.max_days;
+      }
+    }
+
     const progressPercent = computeProgressPercent(phase.step, row.status, daysInPhase);
 
     // One computation drives two response fields: the ISO date pair the page
@@ -797,7 +824,11 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     let daysUntilNextMilestone: number | null = null;
     if (nextStatus && isProgressingPhase(row.status)) {
       if (currentPhaseTypical) {
-        const remaining = Math.max(0, currentPhaseTypical.max_days - Math.max(0, daysInPhase ?? 0));
+        // daysInPhase is floored and only assigned when ms >= 0, so it's already
+        // ≥ 0 (or null → 0 via ??); the outer Math.max(0, …) still clamps the
+        // subtraction when the phase has run past its typical max. Same
+        // redundant-guard cleanup as v1.50's per-phase FILTER.
+        const remaining = Math.max(0, currentPhaseTypical.max_days - (daysInPhase ?? 0));
         nextMilestoneEta = new Date(nowMs + remaining * DAY_MS).toISOString();
         daysUntilNextMilestone = remaining;
       }
@@ -1301,6 +1332,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         current_phase_on_pace: currentPhaseOnPace,
         is_on_track: isOnTrack,
         phase_percent: phasePercent,
+        days_over_typical_phase: daysOverTypicalPhase,
         estimated_completion_window: completionWindow
           ? { earliest: completionWindow.earliest, latest: completionWindow.latest }
           : null,

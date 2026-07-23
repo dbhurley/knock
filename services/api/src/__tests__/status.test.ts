@@ -431,6 +431,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak days_over_typical_phase on 404 (no phase-slip hints to anonymous callers)', async () => {
+    // days_over_typical_phase is the magnitude of how far the current phase has
+    // run past its typical-max benchmark — the exact-days companion to
+    // current_phase_on_pace. Like the pacing signals it derives from, the
+    // integer is keyed by the current phase, so observing it on the 404 path
+    // would let an anonymous caller infer both that the search exists AND that
+    // its current phase has slipped past its expected window. Success shape only.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-980',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('days_over_typical_phase' in body), 'days_over_typical_phase must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak is_on_track on 404 (no health-verdict hints to anonymous callers)', async () => {
     // is_on_track is the server-computed AND of current_phase_on_pace === true
     // and !is_stalled — a single "is the search healthy right now?" verdict.

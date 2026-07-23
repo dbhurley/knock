@@ -606,6 +606,14 @@
             const isNegativeTerminal = (typeof d.is_negative_terminal === 'boolean')
                 ? d.is_negative_terminal
                 : (NEGATIVE_TERMINAL_STATUSES.indexOf(d.status) !== -1);
+            // Computed once here beside isNegativeTerminal (mirroring the server,
+            // where is_terminal / is_negative_terminal / is_placed are derived
+            // together) and reused by the velocity-chip suppression and the
+            // target-start-countdown gate below, rather than each site
+            // re-deriving the same prefer-canonical-with-fallback expression.
+            const isTerminal = (typeof d.is_terminal === 'boolean')
+                ? d.is_terminal
+                : (TERMINAL_STATUSES.indexOf(d.status) !== -1);
             const isProgressing = typeof d.phase_step === 'number' && d.phase_step > 0
                 && !isNegativeTerminal;
             const trackEl = document.querySelector('.progress-track');
@@ -1107,14 +1115,11 @@
             // the page and the field is missing. A 'steady' label is the least
             // visually interesting state but still shipped because it gives the
             // client positive confirmation that the tempo hasn't dropped.
-            const terminalStatus = (typeof d.is_terminal === 'boolean')
-                ? d.is_terminal
-                : (TERMINAL_STATUSES.indexOf(d.status) !== -1);
             velocityTrendEl.className = 'velocity-trend';
             velocityTrendEl.style.display = 'none';
             velocityTrendEl.removeAttribute('title');
             velocityTrendEl.removeAttribute('aria-label');
-            if (d.is_stalled !== true && !terminalStatus && typeof d.velocity_trend === 'string'
+            if (d.is_stalled !== true && !isTerminal && typeof d.velocity_trend === 'string'
                 && typeof d.activity_count_prev_7d === 'number') {
                 const trend = d.velocity_trend;
                 const prev = d.activity_count_prev_7d;
@@ -1270,10 +1275,8 @@
             // is meaningless and reads slightly punitive ("4 days past target"
             // on a successful placement). Suppress the entire target row in
             // those cases so the page reads cleanly on the days that matter
-            // most (right after a placement, cancellation, or close).
-            const isTerminal = (typeof d.is_terminal === 'boolean')
-                ? d.is_terminal
-                : (TERMINAL_STATUSES.indexOf(d.status) !== -1);
+            // most (right after a placement, cancellation, or close). Reuses the
+            // isTerminal computed once above beside isNegativeTerminal.
             if (d.target_start_date && !isTerminal) {
                 document.getElementById('target-start').textContent = fmtDate(d.target_start_date);
                 document.getElementById('target-row').style.display = 'flex';
