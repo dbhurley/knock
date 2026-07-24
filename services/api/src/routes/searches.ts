@@ -567,19 +567,39 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     );
     // Per-type breakdown — types with a zero count are seeded so the frontend
     // can decide what to show. The scalar counts are the column sums.
+    //
+    // `activityBreakdownThisPhase` is the same per-type shape scoped to the
+    // *current* phase (created_at >= status_changed_at). activity_breakdown is
+    // cumulative depth ("8 candidates sourced, 3 presented since opening");
+    // this answers the genuinely distinct "what's happened *in the phase I'm
+    // in right now*?" — the per-type story a return visitor cares about most,
+    // the breakdown analogue of activity_count_this_phase (v1.50) the same way
+    // activity_breakdown is the analogue of activity_count_total. It rides the
+    // same GROUP BY scan (the this_phase FILTER is already computed per row —
+    // no extra query), and by construction its column sum equals
+    // activity_count_this_phase. Null when there's no status_changed_at anchor,
+    // mirroring activity_count_this_phase. Pure API pre-pave for roadmap #4's
+    // reminder email ("In Sourcing so far: 5 candidates sourced, 2 presented"),
+    // matching the pre-pave-only precedent of the v1.34/v1.52 fields.
     const activityBreakdown: Record<string, number> = {};
-    for (const t of PUBLIC_ACTIVITY_TYPES) activityBreakdown[t] = 0;
+    const activityBreakdownThisPhaseRaw: Record<string, number> = {};
+    for (const t of PUBLIC_ACTIVITY_TYPES) {
+      activityBreakdown[t] = 0;
+      activityBreakdownThisPhaseRaw[t] = 0;
+    }
     let activityCountTotal = 0;
     let activityCountLast7d = 0;
     let activityCountPrev7d = 0;
     let thisPhaseCount = 0;
     for (const r of breakdownRows) {
       const n = parseInt(r.n, 10);
+      const tp = parseInt(r.this_phase, 10);
       activityBreakdown[r.activity_type] = n;
+      activityBreakdownThisPhaseRaw[r.activity_type] = tp;
       activityCountTotal += n;
       activityCountLast7d += parseInt(r.last_7d, 10);
       activityCountPrev7d += parseInt(r.prev_7d, 10);
-      thisPhaseCount += parseInt(r.this_phase, 10);
+      thisPhaseCount += tp;
     }
     // Null rather than 0 when there's no phase anchor to count from, so the
     // page can tell "no updates in this phase" apart from "we can't say".
@@ -587,6 +607,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // in that case — this just gives it the honest shape.)
     const activityCountThisPhase: number | null =
       row.status_changed_at ? thisPhaseCount : null;
+    const activityBreakdownThisPhase: Record<string, number> | null =
+      row.status_changed_at ? activityBreakdownThisPhaseRaw : null;
 
     // Categorical week-over-week trend. The thresholds are deliberately
     // generous: a "trend" only fires when both numbers are non-trivial AND
@@ -1006,6 +1028,18 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // 12 of a typical 14–28 days") straight off phase_history. Same
     // one-source-of-truth rationale as `label` (v1.22) and `on_pace` (v1.23);
     // nested inside phase_history, so the existing 404-leak test covers it.
+    // Each completed entry also carries `exited_at`: the canonical date the
+    // search left that phase — the entered_at of the *next* phase in the
+    // history (null for the current/last phase, which is still running). It's
+    // the transition-out companion to entered_at: a consumer can already read
+    // "entered Apr 22 · 12 days", but rendering the dated *range* a reminder
+    // email quotes — "Scoping ran Apr 22 → May 4" — otherwise forces it to add
+    // entered_at + duration_days itself (and, on the standalone
+    // latest_completed_phase object below, without the next entry to hand). This
+    // makes the entry self-describing so no consumer re-derives the exit date —
+    // same one-source-of-truth rationale as the v1.34 typical_* benchmark
+    // fields. Nested inside phase_history, so the existing 404-leak test for
+    // phase_history already covers it.
     const phaseHistory = phaseHistorySorted.map((entry, i) => {
       const next = phaseHistorySorted[i + 1];
       const typical = PUBLIC_STATUS_TYPICAL_DURATION[entry.phase] ?? null;
@@ -1020,6 +1054,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase: entry.phase,
         label: PUBLIC_STATUS_PHASES[entry.phase]?.label ?? entry.phase,
         entered_at: entry.entered_at,
+        exited_at: next?.entered_at ?? null,
         duration_days: durationDays,
         typical_min_days: typical?.min_days ?? null,
         typical_max_days: typical?.max_days ?? null,
@@ -1048,6 +1083,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           phase: string;
           label: string;
           entered_at: string;
+          exited_at: string | null;
           duration_days: number;
           typical_min_days: number | null;
           typical_max_days: number | null;
@@ -1061,6 +1097,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           phase: h.phase,
           label: h.label,
           entered_at: h.entered_at,
+          exited_at: h.exited_at,
           duration_days: h.duration_days,
           typical_min_days: h.typical_min_days,
           typical_max_days: h.typical_max_days,
@@ -1382,6 +1419,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         velocity_trend: velocityTrend,
         is_ramping_up: isRampingUp,
         activity_breakdown: activityBreakdown,
+        activity_breakdown_this_phase: activityBreakdownThisPhase,
         recent_activities: activities.map((a) => ({
           activity_type: a.activity_type,
           description: a.description,

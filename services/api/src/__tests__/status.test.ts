@@ -1047,6 +1047,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak activity_breakdown_this_phase on 404 (no per-phase engagement disclosure to anonymous callers)', async () => {
+    // activity_breakdown_this_phase is the per-type activity breakdown scoped to
+    // the current phase — a direct signal of how much work (and of what kind)
+    // the search's current phase has seen. It's keyed to a real search's state,
+    // so observing it on the unauthenticated path would let an anonymous caller
+    // infer both that the search exists AND the shape of its current-phase
+    // engagement. Locks the no-enumeration contract for it in CI alongside the
+    // activity_count_this_phase count it's the per-type companion to.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-949',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('activity_breakdown_this_phase' in body), 'activity_breakdown_this_phase must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
