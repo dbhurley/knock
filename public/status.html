@@ -533,6 +533,18 @@
             // already in the thread so nothing has to be hunted down. Every
             // outbound email pre-tagged with KNK-XXXX-NNN also reinforces the
             // canonical reference as the way to talk about the search.
+            // Canonical deep-link back to this status surface, resolved once per
+            // render. Prefer the API's status_url (one source of truth with the
+            // intake success screen and the planned reminder email) and fall back
+            // to a deep-link built from the current origin on older API responses
+            // missing the field. Reused by the "Email Janet" body below and by the
+            // Google Calendar / .ics links further down, both of which previously
+            // rebuilt the link by hand — so no surface on the page assembles the
+            // status link itself any more.
+            const statusLink = (typeof d.status_url === 'string' && d.status_url)
+                ? d.status_url
+                : location.origin + '/status?ref=' + encodeURIComponent(d.search_number);
+
             const emailBtn = document.getElementById('email-btn');
             if (emailBtn && d.search_number) {
                 const subjectBits = ['Re: ' + d.search_number];
@@ -545,14 +557,8 @@
                 // reference so every outbound client email lands in Janet's
                 // inbox already tagged with the search it's about, and quietly
                 // reinforces the canonical deep-link as *the* way back to the
-                // live status. Prefer the API's canonical status_url (one source
-                // of truth with the intake success screen + reminder email) and
-                // fall back to the deep-link built from the current origin on
-                // older API responses missing the field. The blank lines leave
-                // the cursor where the client starts typing.
-                const statusLink = (typeof d.status_url === 'string' && d.status_url)
-                    ? d.status_url
-                    : location.origin + '/status?ref=' + encodeURIComponent(d.search_number);
+                // live status. Uses the shared statusLink resolved above. The
+                // blank lines leave the cursor where the client starts typing.
                 const body = 'Hi Janet,\n\n\n\n' +
                     '(Search ' + d.search_number + ' — live status: ' + statusLink + ')';
                 emailBtn.href = 'mailto:janet@askknock.com?subject=' + encodeURIComponent(subject) +
@@ -1307,10 +1313,13 @@
                     const title = (d.position_title || 'Executive Search') +
                         ' target start' +
                         (d.school_name ? ' — ' + d.school_name : '');
-                    const statusUrl = location.origin + '/status?ref=' +
-                        encodeURIComponent(d.search_number);
+                    // Reuses the shared statusLink resolved at the top of this
+                    // render — the canonical status_url when the API supplies it —
+                    // so the calendar event's description and URL property quote
+                    // the same link as the "Email Janet" body and the intake
+                    // success screen rather than each rebuilding it from origin.
                     const details = 'Target start date for ' + d.search_number +
-                        '. Live status: ' + statusUrl;
+                        '. Live status: ' + statusLink;
                     const params = new URLSearchParams({
                         action: 'TEMPLATE',
                         text: title,
@@ -1349,7 +1358,7 @@
                         'SUMMARY:' + icsEscape(title),
                         'DESCRIPTION:' + icsEscape(details),
                         d.school_location ? 'LOCATION:' + icsEscape(d.school_location) : null,
-                        'URL:' + statusUrl,
+                        'URL:' + statusLink,
                         'END:VEVENT',
                         'END:VCALENDAR',
                     ].filter(Boolean).join('\r\n');
@@ -1480,7 +1489,23 @@
                         const wh = document.createElement('div');
                         wh.className = 'jl-when';
                         const dateStr = fmtDate(hist.entered_at);
-                        let whText = (cls === 'current' ? 'Started ' : 'Entered ') + dateStr;
+                        // A completed phase reads as a dated *range* — "Apr 22 →
+                        // May 4" — sourced from the canonical exited_at the API
+                        // carries on every phase_history entry (v1.53). The row
+                        // previously showed only the arrival date, so the archive
+                        // told the client when each phase *began* but left them
+                        // adding the duration themselves to see when it ended.
+                        // The range is the phrasing the reminder email quotes, so
+                        // both surfaces now read the same way. Falls back to the
+                        // bare "Entered <date>" on older API versions missing the
+                        // field; the current phase keeps "Started <date>" since it
+                        // hasn't been exited yet.
+                        let whText;
+                        if (cls === 'done' && typeof hist.exited_at === 'string' && hist.exited_at) {
+                            whText = dateStr + ' → ' + fmtDate(hist.exited_at);
+                        } else {
+                            whText = (cls === 'current' ? 'Started ' : 'Entered ') + dateStr;
+                        }
                         // Actual elapsed days for a completed phase (the gap to
                         // the next phase's entry date, supplied server-side).
                         // Turns the dated archive into a durational one the
@@ -1515,6 +1540,15 @@
                             const pace = document.createElement('span');
                             pace.className = 'jl-pace';
                             pace.textContent = 'on pace';
+                            // Real space text node before the tag: the gold pill is
+                            // separated visually only by a CSS margin, so without
+                            // it a screen reader announces "…12 dayson pace" as one
+                            // run-on token. The v1.38 a11y pass fixed exactly this
+                            // on the current-phase pacing line and the "just
+                            // wrapped" glance (via appendPaceTag) but left the
+                            // archive rows, which are the same contract with a
+                            // different pill class.
+                            wh.appendChild(document.createTextNode(' '));
                             wh.appendChild(pace);
                         }
                         li.appendChild(wh);
