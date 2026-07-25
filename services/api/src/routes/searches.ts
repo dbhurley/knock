@@ -1040,15 +1040,35 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // same one-source-of-truth rationale as the v1.34 typical_* benchmark
     // fields. Nested inside phase_history, so the existing 404-leak test for
     // phase_history already covers it.
+    // Each completed entry also carries `days_over_typical`: how many days that
+    // phase ran *past* its typical-max benchmark (duration_days −
+    // typical_max_days). It's the per-phase mirror of the current phase's
+    // days_over_typical_phase (v1.52) — the exact-days magnitude companion to
+    // the entry's own on_pace boolean, the same way days_over_typical_phase is
+    // the magnitude companion to current_phase_on_pace. on_pace answers "did
+    // this phase land within benchmark?"; when it didn't, nothing on the entry
+    // said by how much, so a consumer had to re-subtract duration_days and
+    // typical_max_days itself even though the entry already carries both.
+    // Positive-only and null-otherwise, matching v1.52: null for the
+    // current/last phase (no duration yet), for any phase without a typical
+    // duration, AND whenever the phase landed on pace — so a flawless phase
+    // reads as a bare absence rather than "0 days over". Pure API pre-pave
+    // (the journey archive is positive-only by design, so an over-typical row
+    // stays neutral there) for roadmap #4's reminder email, which can quote
+    // "Screening ran 6 days longer than typical" off one canonical integer.
     const phaseHistory = phaseHistorySorted.map((entry, i) => {
       const next = phaseHistorySorted[i + 1];
       const typical = PUBLIC_STATUS_TYPICAL_DURATION[entry.phase] ?? null;
       let durationDays: number | null = null;
       let onPace: boolean | null = null;
+      let daysOverTypical: number | null = null;
       if (next) {
         const ms = new Date(next.entered_at).getTime() - new Date(entry.entered_at).getTime();
         if (!Number.isNaN(ms) && ms >= 0) durationDays = Math.floor(ms / DAY_MS);
-        if (typical && durationDays !== null) onPace = durationDays <= typical.max_days;
+        if (typical && durationDays !== null) {
+          onPace = durationDays <= typical.max_days;
+          if (!onPace) daysOverTypical = durationDays - typical.max_days;
+        }
       }
       return {
         phase: entry.phase,
@@ -1059,6 +1079,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         typical_min_days: typical?.min_days ?? null,
         typical_max_days: typical?.max_days ?? null,
         on_pace: onPace,
+        days_over_typical: daysOverTypical,
       };
     });
 
@@ -1088,6 +1109,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           typical_min_days: number | null;
           typical_max_days: number | null;
           on_pace: boolean | null;
+          days_over_typical: number | null;
         }
       | null = null;
     for (let i = phaseHistory.length - 1; i >= 0; i--) {
@@ -1102,6 +1124,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           typical_min_days: h.typical_min_days,
           typical_max_days: h.typical_max_days,
           on_pace: h.on_pace,
+          days_over_typical: h.days_over_typical,
         };
         break;
       }

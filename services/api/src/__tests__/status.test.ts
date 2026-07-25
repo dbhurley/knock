@@ -1069,6 +1069,32 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('returns exactly { error, message } on 404 (whole-surface no-enumeration contract)', async () => {
+    // Every negative-path test above locks one field at a time, which means a
+    // future field added to the success shape is only covered once someone
+    // remembers to write its own assertion. This asserts the 404 envelope
+    // structurally instead: the body carries exactly `error` and `message` and
+    // nothing else, so *any* field that starts leaking on the unauthenticated
+    // path fails CI whether or not it has a dedicated test. The per-field tests
+    // stay as documentation of why each field is sensitive; this is the backstop
+    // that makes the contract exhaustive rather than enumerated.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-948',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.deepEqual(
+      Object.keys(body).sort(),
+      ['error', 'message'],
+      `404 body must carry only error + message, got: ${Object.keys(body).join(', ')}`,
+    );
+  });
+
   it('returns identical 404 shape for email mismatch as for unknown ref (no enumeration)', async () => {
     // Use a real-looking ref but a clearly bogus email. The endpoint must
     // not differentiate "ref exists, wrong email" from "ref does not exist".
