@@ -339,6 +339,35 @@
             interview_scheduled:  '#',
             client_meeting:       '☎'
         };
+        // Human labels for each client-visible activity type, in the natural
+        // search-engagement narrative order (sourcing → presenting →
+        // interviewing → meetings → phase transitions) so any breakdown built
+        // from them reads left-to-right as the arc of the search. Hoisted here
+        // because two surfaces now render a per-type breakdown off the same
+        // labels — the cumulative "Engagement at a glance" pill strip and the
+        // current-phase description on the pacing line — and they must not
+        // drift on wording or order.
+        const ACTIVITY_LABELS = [
+            { key: 'candidate_added',     singular: 'candidate sourced',   plural: 'candidates sourced'   },
+            { key: 'presentation_sent',   singular: 'candidate presented', plural: 'candidates presented' },
+            { key: 'interview_scheduled', singular: 'committee interview', plural: 'committee interviews' },
+            { key: 'client_meeting',      singular: 'client meeting',      plural: 'client meetings'      },
+            { key: 'status_change',       singular: 'phase transition',    plural: 'phase transitions'    }
+        ];
+        // Turn one of the API's per-type breakdown objects (activity_breakdown
+        // or activity_breakdown_this_phase) into a readable "5 candidates
+        // sourced, 2 candidates presented" list. Zero-count types are dropped
+        // so a young search doesn't read as a run of zeroes. Returns '' when
+        // there's nothing to say, so callers can gate on a falsy result.
+        function describeBreakdown(breakdown) {
+            if (!breakdown || typeof breakdown !== 'object') return '';
+            return ACTIVITY_LABELS
+                .map(function(spec) { return { spec: spec, n: breakdown[spec.key] || 0 }; })
+                .filter(function(p) { return p.n > 0; })
+                .map(function(p) { return p.n + ' ' + (p.n === 1 ? p.spec.singular : p.spec.plural); })
+                .join(', ');
+        }
+
         // Background auto-refresh: cheap way to turn an open tab into a live
         // dashboard. With v1.3+ auto-logged status_change/candidate_added/
         // presentation_sent activities, the timeline updates throughout the
@@ -832,11 +861,37 @@
                 // it: "18 days (typically 14–28 days · ~64% in) · 6 updates".
                 // Omitted at zero (a phase that has just turned over shouldn't
                 // read "· 0 updates") and on older API versions where it's null.
-                if (typeof d.activity_count_this_phase === 'number' && d.activity_count_this_phase > 0) {
-                    line += ' · ' + d.activity_count_this_phase + ' update' +
-                        (d.activity_count_this_phase === 1 ? '' : 's');
-                }
                 pacingEl.textContent = line;
+                if (typeof d.activity_count_this_phase === 'number' && d.activity_count_this_phase > 0) {
+                    const updatesEl = document.createElement('span');
+                    updatesEl.textContent = ' · ' + d.activity_count_this_phase + ' update' +
+                        (d.activity_count_this_phase === 1 ? '' : 's');
+                    // Break that count out by type on hover / for screen readers,
+                    // off the canonical activity_breakdown_this_phase — the
+                    // per-type companion to activity_count_this_phase, scoped to
+                    // the phase the client is actually in. "6 updates" says how
+                    // much; "5 candidates sourced, 1 candidate presented" says
+                    // what, which is the story a return visitor lands mid-phase
+                    // wanting. The cumulative strip below answers the same
+                    // question for the whole engagement, so this is the one
+                    // surface that answers it for right now. Same in-place
+                    // enrichment as the v1.47 velocity-chip description; omitted
+                    // entirely on older API versions missing the field.
+                    const phaseStory = describeBreakdown(d.activity_breakdown_this_phase);
+                    if (phaseStory) {
+                        // The description carries the count as well as the
+                        // breakdown, because an aria-label *replaces* the span's
+                        // own text for screen readers — so it has to stand on its
+                        // own rather than assume the "· 6 updates" was heard.
+                        const desc = 'In ' + d.phase_label + ' so far: ' +
+                            d.activity_count_this_phase + ' update' +
+                            (d.activity_count_this_phase === 1 ? '' : 's') +
+                            ' — ' + phaseStory;
+                        updatesEl.title = desc;
+                        updatesEl.setAttribute('aria-label', desc);
+                    }
+                    pacingEl.appendChild(updatesEl);
+                }
                 // Positive "on pace" tag on the current phase, mirroring the
                 // journey archive's tag on completed phases. Prefer the API's
                 // canonical current_phase_on_pace flag (one source of truth,
@@ -1212,16 +1267,10 @@
                 // Order matches the natural search-engagement narrative so
                 // the row reads left-to-right as the story of the engagement
                 // (sourcing → presenting → interviewing → meetings → phase
-                // transitions). Zero-count types stay hidden so a day-1
-                // search doesn't render five "0" pills.
-                const pillSpec = [
-                    { key: 'candidate_added',     singular: 'candidate sourced',         plural: 'candidates sourced'         },
-                    { key: 'presentation_sent',   singular: 'candidate presented',       plural: 'candidates presented'       },
-                    { key: 'interview_scheduled', singular: 'committee interview',       plural: 'committee interviews'       },
-                    { key: 'client_meeting',      singular: 'client meeting',            plural: 'client meetings'            },
-                    { key: 'status_change',       singular: 'phase transition',          plural: 'phase transitions'          },
-                ];
-                const pills = pillSpec
+                // transitions) — see ACTIVITY_LABELS, shared with the
+                // current-phase breakdown on the pacing line. Zero-count types
+                // stay hidden so a day-1 search doesn't render five "0" pills.
+                const pills = ACTIVITY_LABELS
                     .map(function(p) { return { spec: p, n: breakdown[p.key] || 0 }; })
                     .filter(function(p) { return p.n > 0; });
                 if (pills.length > 0) {
@@ -1239,9 +1288,7 @@
                     // to the breakdown strip. role="img" is set in JS (not the
                     // static markup) so an empty pills container before first
                     // render isn't announced as a label-less image.
-                    const srSummary = pills.map(function(p) {
-                        return p.n + ' ' + (p.n === 1 ? p.spec.singular : p.spec.plural);
-                    }).join(', ');
+                    const srSummary = describeBreakdown(breakdown);
                     engagementPills.setAttribute('role', 'img');
                     engagementPills.setAttribute('aria-label', 'Engagement so far: ' + srSummary);
                     engagementStrip.classList.add('show');
