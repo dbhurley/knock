@@ -348,6 +348,22 @@ function daysToWeeks(days: number): number {
 // uses a wider `> 30` "more than a month out" boundary, not this one.)
 const WEEKS_THRESHOLD_DAYS = 14;
 
+// The fortnight gate itself, applied to a nullable day count. Every scalar
+// weeks-valued field on the status response is the same two-line shape —
+// "null unless the span is at or past a fortnight, otherwise daysToWeeks(it)" —
+// which was written out per field at five sites (weeks_since_last_activity,
+// weeks_until_next_milestone, engagement_age_weeks, placement_followup_weeks_
+// remaining, placement_age_weeks). Pairing the threshold with the rounding in
+// one helper means a field can't accidentally get one without the other. Same
+// one-source-of-truth hygiene as daysToWeeks() (v1.32) and the WEEKS_THRESHOLD_
+// DAYS hoist (v1.44) it composes. The two deliberate non-conformers stay as
+// they are: estimated_weeks_remaining gates a *range* on its max_days and
+// rounds both ends, and weeks_until_target_start uses the wider `> 30`
+// "more than a month out" boundary.
+function weeksIfPastFortnight(days: number | null): number | null {
+  return days !== null && days >= WEEKS_THRESHOLD_DAYS ? daysToWeeks(days) : null;
+}
+
 // Week-over-week velocity dead-band: a categorical trend ('accelerating' /
 // 'cooling') only fires when the trailing-7-day activity count moved by at
 // least this many updates versus the prior 7-day window, so a single row of
@@ -692,10 +708,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // than another inline frontend days→weeks conversion. Null under a fortnight,
     // where the page still shows exact days, and null when there's no public
     // activity yet — mirroring days_since_last_activity.
-    let weeksSinceLastActivity: number | null = null;
-    if (daysSinceLastActivity !== null && daysSinceLastActivity >= WEEKS_THRESHOLD_DAYS) {
-      weeksSinceLastActivity = daysToWeeks(daysSinceLastActivity);
-    }
+    const weeksSinceLastActivity = weeksIfPastFortnight(daysSinceLastActivity);
 
     // Honest stall signal: progressing phase, no public activity in a week,
     // and the same phase has been the current phase for two-plus weeks. The
@@ -869,10 +882,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // no countdown at all or when the next phase is close in (< 14 days, where
     // the page renders the exact "(in ~N days)"). The page prefers this field
     // and falls back to local rounding only on older API versions.
-    let weeksUntilNextMilestone: number | null = null;
-    if (typeof daysUntilNextMilestone === 'number' && daysUntilNextMilestone >= WEEKS_THRESHOLD_DAYS) {
-      weeksUntilNextMilestone = daysToWeeks(daysUntilNextMilestone);
-    }
+    const weeksUntilNextMilestone = weeksIfPastFortnight(daysUntilNextMilestone);
 
     // Canonical server-computed count of phases the search has finished.
     // The status page already derives this client-side for its collapsed
@@ -932,10 +942,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // weeks_until_target_start): the planned reminder email / PDF (roadmap #4) can
     // quote "your search has been running about 11 weeks" off the same integer the
     // page renders. Null under a fortnight, where the page still shows exact days.
-    let engagementAgeWeeks: number | null = null;
-    if (engagementAgeDays !== null && engagementAgeDays >= WEEKS_THRESHOLD_DAYS) {
-      engagementAgeWeeks = daysToWeeks(engagementAgeDays);
-    }
+    const engagementAgeWeeks = weeksIfPastFortnight(engagementAgeDays);
 
     // Phase-transition history. Drawn from the `status_change` rows in
     // search_activities (one per actual transition, auto-logged by the v1.3
@@ -1162,19 +1169,42 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // typical duration and so can never be "on pace"; using phases_completed as
     // the denominator would understate a flawless run as "7 of 8 on pace"
     // instead of "all on pace" on the exact celebration moment (the v1.35 fix).
+    //
+    // days_over_typical_total rides the same pass: the summed magnitude of how
+    // far the *completed* phases collectively ran past their typical-max
+    // benchmarks. It's the engagement-level aggregate companion to the per-entry
+    // days_over_typical (v1.54) in exactly the way phases_on_pace is the
+    // aggregate companion to the per-entry on_pace — and the whole-journey
+    // counterpart to days_over_typical_phase (v1.52), which covers only the
+    // phase still in flight. all_phases_on_pace already answers "did every
+    // completed phase land within benchmark?" as a boolean; when it's false,
+    // nothing said by how much overall, so a consumer had to sum the per-entry
+    // integers itself. Positive-only and null-otherwise, matching v1.52/v1.54:
+    // null in the same non-forward states as phases_benchmarked, and null (not
+    // 0) when nothing slipped, so a flawless run reads as a bare absence
+    // alongside all_phases_on_pace === true. Deliberately excludes the current
+    // in-flight phase — that magnitude is days_over_typical_phase's job, and
+    // mixing the two would double-count a phase that later completes. Pure API
+    // pre-pave for roadmap #4's reminder email ("your search is running about a
+    // week longer than typical overall"); the status page's journey surfaces are
+    // positive-only by design, same as the v1.52/v1.54 precedent.
     let phasesOnPace: number | null = null;
     let phasesBenchmarked: number | null = null;
+    let daysOverTypicalTotal: number | null = null;
     if (isForwardPhase(row.status)) {
       let onPaceCount = 0;
       let benchmarkedCount = 0;
+      let overTypicalDays = 0;
       for (const h of phaseHistory) {
         if (h.on_pace !== null) {
           benchmarkedCount += 1;
           if (h.on_pace === true) onPaceCount += 1;
         }
+        if (h.days_over_typical !== null) overTypicalDays += h.days_over_typical;
       }
       phasesOnPace = onPaceCount;
       phasesBenchmarked = benchmarkedCount;
+      if (overTypicalDays > 0) daysOverTypicalTotal = overTypicalDays;
     }
 
     // Canonical "flawless run so far" boolean — true when every benchmarkable
@@ -1259,13 +1289,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
           0,
           Math.ceil((untilTs - nowMs) / DAY_MS),
         );
-        if (placementFollowupDaysRemaining >= WEEKS_THRESHOLD_DAYS) {
-          placementFollowupWeeksRemaining = daysToWeeks(placementFollowupDaysRemaining);
-        }
+        placementFollowupWeeksRemaining = weeksIfPastFortnight(placementFollowupDaysRemaining);
         placementAgeDays = Math.max(0, Math.floor((nowMs - placedTs) / DAY_MS));
-        if (placementAgeDays >= WEEKS_THRESHOLD_DAYS) {
-          placementAgeWeeks = daysToWeeks(placementAgeDays);
-        }
+        placementAgeWeeks = weeksIfPastFortnight(placementAgeDays);
         placementFollowupPercent = Math.round(
           Math.min(1, Math.max(0, placementAgeDays / PLACEMENT_FOLLOWUP_DAYS)) * 100,
         );
@@ -1377,6 +1403,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phases_on_pace: phasesOnPace,
         phases_benchmarked: phasesBenchmarked,
         all_phases_on_pace: allPhasesOnPace,
+        days_over_typical_total: daysOverTypicalTotal,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
         next_milestone_eta: nextMilestoneEta,

@@ -704,6 +704,28 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak days_over_typical_total on 404 (no slippage hints to anonymous callers)', async () => {
+    // days_over_typical_total is the summed magnitude of how far the completed
+    // phases ran past their typical-max benchmarks — the aggregate companion to
+    // all_phases_on_pace. Observing it on the 404 path would let an anonymous
+    // caller infer both that the search exists AND that it has fallen behind its
+    // expected pace, so it belongs only on the verified success shape. The
+    // structural whole-envelope assertion below is the exhaustive backstop; this
+    // documents why this particular field is sensitive.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-947',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('days_over_typical_total' in body), 'days_over_typical_total must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak phases_remaining on 404 (no progress hints to anonymous callers)', async () => {
     // phases_remaining is the forward-looking complement to phases_completed —
     // the count of phases the search has not yet finished. Like every other
