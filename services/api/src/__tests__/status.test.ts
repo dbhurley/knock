@@ -389,6 +389,29 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak activity_labels on 404 (404 envelope stays exactly error + message)', async () => {
+    // activity_labels is the canonical per-type copy catalog that makes the
+    // breakdown fields self-describing. Unlike its neighbours it carries no
+    // search-specific data — it's static copy — so it discloses nothing about
+    // a particular search. It is asserted anyway because the contract this
+    // endpoint holds is about the *envelope*, not about which fields happen to
+    // be sensitive: the 404 body is exactly { error, message } and every
+    // success-shape field stays off it, so a future field can't be waved
+    // through on a case-by-case "this one is harmless" judgement.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-961',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('activity_labels' in body), 'activity_labels must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak current_phase_on_pace on 404 (no pacing-verdict hints to anonymous callers)', async () => {
     // current_phase_on_pace is the server-computed boolean verdict on whether
     // the current phase is still within its typical-max benchmark. Like the

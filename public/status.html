@@ -354,14 +354,31 @@
             { key: 'client_meeting',      singular: 'client meeting',      plural: 'client meetings'      },
             { key: 'status_change',       singular: 'phase transition',    plural: 'phase transitions'    }
         ];
+        // Prefer the API's canonical activity_labels catalog over the local map
+        // above. The wording *and* the narrative order are the same copy the
+        // planned reminder email quotes, so sourcing them from the response
+        // means a future copy edit lands on both surfaces at once rather than
+        // leaving the page and the email describing the same breakdown
+        // differently — the same one-source-of-truth move as phase_explainer
+        // and the per-phase label. Falls back to the local ACTIVITY_LABELS on
+        // older API versions (and on a malformed catalog, so a bad payload
+        // degrades to the built-in copy rather than blanking the breakdowns).
+        function resolveActivityLabels(d) {
+            if (!Array.isArray(d.activity_labels)) return ACTIVITY_LABELS;
+            const specs = d.activity_labels
+                .filter(function(l) { return l && l.type && l.singular && l.plural; })
+                .map(function(l) { return { key: l.type, singular: l.singular, plural: l.plural }; });
+            return specs.length ? specs : ACTIVITY_LABELS;
+        }
+
         // Turn one of the API's per-type breakdown objects (activity_breakdown
         // or activity_breakdown_this_phase) into a readable "5 candidates
         // sourced, 2 candidates presented" list. Zero-count types are dropped
         // so a young search doesn't read as a run of zeroes. Returns '' when
         // there's nothing to say, so callers can gate on a falsy result.
-        function describeBreakdown(breakdown) {
+        function describeBreakdown(breakdown, specs) {
             if (!breakdown || typeof breakdown !== 'object') return '';
-            return ACTIVITY_LABELS
+            return (specs || ACTIVITY_LABELS)
                 .map(function(spec) { return { spec: spec, n: breakdown[spec.key] || 0 }; })
                 .filter(function(p) { return p.n > 0; })
                 .map(function(p) { return p.n + ' ' + (p.n === 1 ? p.spec.singular : p.spec.plural); })
@@ -548,6 +565,13 @@
                 pace.textContent = 'on pace';
                 el.appendChild(pace);
             }
+
+            // Per-type label catalog for this render — the API's canonical
+            // activity_labels when present, the local map otherwise. Resolved
+            // once so the two breakdown surfaces (the current-phase description
+            // on the pacing line and the cumulative "Engagement at a glance"
+            // strip) can't end up reading from different catalogs.
+            const labelSpecs = resolveActivityLabels(d);
 
             document.getElementById('position-title').textContent = d.position_title || 'Executive Search';
             document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
@@ -877,7 +901,7 @@
                     // surface that answers it for right now. Same in-place
                     // enrichment as the v1.47 velocity-chip description; omitted
                     // entirely on older API versions missing the field.
-                    const phaseStory = describeBreakdown(d.activity_breakdown_this_phase);
+                    const phaseStory = describeBreakdown(d.activity_breakdown_this_phase, labelSpecs);
                     if (phaseStory) {
                         // The description carries the count as well as the
                         // breakdown, because an aria-label *replaces* the span's
@@ -1267,10 +1291,11 @@
                 // Order matches the natural search-engagement narrative so
                 // the row reads left-to-right as the story of the engagement
                 // (sourcing → presenting → interviewing → meetings → phase
-                // transitions) — see ACTIVITY_LABELS, shared with the
-                // current-phase breakdown on the pacing line. Zero-count types
-                // stay hidden so a day-1 search doesn't render five "0" pills.
-                const pills = ACTIVITY_LABELS
+                // transitions) — see labelSpecs, the canonical catalog shared
+                // with the current-phase breakdown on the pacing line.
+                // Zero-count types stay hidden so a day-1 search doesn't
+                // render five "0" pills.
+                const pills = labelSpecs
                     .map(function(p) { return { spec: p, n: breakdown[p.key] || 0 }; })
                     .filter(function(p) { return p.n > 0; });
                 if (pills.length > 0) {
@@ -1288,7 +1313,7 @@
                     // to the breakdown strip. role="img" is set in JS (not the
                     // static markup) so an empty pills container before first
                     // render isn't announced as a label-less image.
-                    const srSummary = describeBreakdown(breakdown);
+                    const srSummary = describeBreakdown(breakdown, labelSpecs);
                     engagementPills.setAttribute('role', 'img');
                     engagementPills.setAttribute('aria-label', 'Engagement so far: ' + srSummary);
                     engagementStrip.classList.add('show');
@@ -1547,9 +1572,21 @@
                         // bare "Entered <date>" on older API versions missing the
                         // field; the current phase keeps "Started <date>" since it
                         // hasn't been exited yet.
+                        //
+                        // The arrow is a visual shorthand a screen reader either
+                        // skips or announces as "right arrow", so the dated range
+                        // — the one row on the page that encodes meaning in a
+                        // glyph — is also built as a spoken string ("Ran Apr 22
+                        // to May 4") and attached as an aria-label below. Only
+                        // the range form needs it; the "Started/Entered <date>"
+                        // form already reads correctly as written. Same a11y
+                        // rationale as the v1.38 pace-tag spacing and the v1.43
+                        // decorative-glyph pass.
                         let whText;
+                        let whSpoken = null;
                         if (cls === 'done' && typeof hist.exited_at === 'string' && hist.exited_at) {
                             whText = dateStr + ' → ' + fmtDate(hist.exited_at);
+                            whSpoken = 'Ran ' + dateStr + ' to ' + fmtDate(hist.exited_at);
                         } else {
                             whText = (cls === 'current' ? 'Started ' : 'Entered ') + dateStr;
                         }
@@ -1561,7 +1598,9 @@
                         // duration — the current phase is still running.
                         let onPace = false;
                         if (cls === 'done' && typeof hist.duration_days === 'number' && hist.duration_days >= 0) {
-                            whText += ' · ' + hist.duration_days + ' day' + (hist.duration_days === 1 ? '' : 's');
+                            const durText = hist.duration_days + ' day' + (hist.duration_days === 1 ? '' : 's');
+                            whText += ' · ' + durText;
+                            if (whSpoken) whSpoken += ', ' + durText;
                             // A completed phase that landed within its typical
                             // window earns a positive "on pace" tag — turning the
                             // durational archive into a comparative one and
@@ -1597,6 +1636,14 @@
                             // different pill class.
                             wh.appendChild(document.createTextNode(' '));
                             wh.appendChild(pace);
+                        }
+                        // aria-label *replaces* the element's own text for
+                        // assistive tech, so the spoken string has to restate
+                        // the pace tag appended above rather than assume it is
+                        // still announced separately (the same contract the
+                        // v1.55 per-phase description follows).
+                        if (whSpoken) {
+                            wh.setAttribute('aria-label', whSpoken + (onPace ? ', on pace' : ''));
                         }
                         li.appendChild(wh);
                     }

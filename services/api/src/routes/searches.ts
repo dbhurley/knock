@@ -374,15 +374,36 @@ function weeksIfPastFortnight(days: number | null): number | null {
 // STATUSES, and byte-identical to the prior literal.
 const VELOCITY_TREND_DEADBAND = 2;
 
+// Canonical human copy for each client-visible activity type, listed in the
+// natural search-engagement narrative order (sourcing → presenting →
+// interviewing → meetings → phase transitions) so any per-type breakdown built
+// from it reads left-to-right as the arc of the search.
+//
+// The response already returns three fields keyed by the raw activity_type enum
+// — activity_breakdown (v1.17), activity_breakdown_this_phase (v1.53) and
+// last_activity_type (v1.47) — but nothing in the API said what those enum keys
+// mean in English, so the wording *and the order* lived only in the status
+// page's own frontend map. Roadmap #4's per-phase reminder email is documented
+// to quote the exact same sentence the page renders ("In Sourcing so far: 5
+// candidates sourced, 2 presented"), which it can't do without re-implementing
+// that copy — the same duplication v1.9 closed for phase_explainer and v1.22
+// closed for the per-phase `label`. Surfacing it as `activity_labels` makes the
+// breakdown fields self-describing: one source of truth for both the wording
+// and the narrative order, so the page and the email can't drift on either.
+const PUBLIC_ACTIVITY_LABELS: ReadonlyArray<{ type: string; singular: string; plural: string }> = [
+  { type: 'candidate_added',     singular: 'candidate sourced',   plural: 'candidates sourced'   },
+  { type: 'presentation_sent',   singular: 'candidate presented', plural: 'candidates presented' },
+  { type: 'interview_scheduled', singular: 'committee interview', plural: 'committee interviews' },
+  { type: 'client_meeting',      singular: 'client meeting',      plural: 'client meetings'      },
+  { type: 'status_change',       singular: 'phase transition',    plural: 'phase transitions'    },
+];
+
 // Activity types we surface to clients. Internal-only types (e.g. fee_paid,
 // note_added) are filtered out so we never leak commercial or candidate detail.
-const PUBLIC_ACTIVITY_TYPES = new Set([
-  'status_change',
-  'candidate_added',
-  'presentation_sent',
-  'interview_scheduled',
-  'client_meeting',
-]);
+// Derived from PUBLIC_ACTIVITY_LABELS so the redaction whitelist and the copy
+// catalog can never disagree about which types are client-visible — a new
+// public type has to be added in exactly one place.
+const PUBLIC_ACTIVITY_TYPES = new Set(PUBLIC_ACTIVITY_LABELS.map((l) => l.type));
 
 // Pick a description verb that actually fits the transition. Earlier code
 // always wrote "Search advanced: X → Y" — fine for forward progress, badly
@@ -734,10 +755,28 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // phase_history on_pace flag). One source of truth: the planned reminder
     // email / PDF (roadmap #4) can quote "Sourcing is on pace — 18 of a
     // typical 14–28 days" off this boolean instead of re-deriving the benchmark.
-    let currentPhaseOnPace: boolean | null = null;
-    if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
-      if (currentPhaseTypical) currentPhaseOnPace = daysInPhase <= currentPhaseTypical.max_days;
-    }
+    //
+    // The three current-phase benchmark fields below (current_phase_on_pace,
+    // phase_percent, days_over_typical_phase) share one precondition — the
+    // search is in a progressing phase, we know how long it has been there, and
+    // that phase has a typical duration to measure against — and it was written
+    // out as the same nested `if (typeof daysInPhase === 'number' &&
+    // isProgressingPhase(...)) { if (currentPhaseTypical) … }` at each site.
+    // Resolving it once means the three fields can't end up gated on subtly
+    // different conditions (their documented "null in exactly the same states"
+    // contract is now structural rather than a convention three blocks have to
+    // keep), and it narrows currentPhaseTypical so each field is a single const
+    // instead of a mutable let. Same one-source-of-truth hygiene as the
+    // isProgressingPhase() (v1.34) and currentPhaseTypical (v1.41) extractions —
+    // byte-identical output.
+    const currentPhaseBenchmark =
+      typeof daysInPhase === 'number' && isProgressingPhase(row.status) && currentPhaseTypical
+        ? { days: daysInPhase, max_days: currentPhaseTypical.max_days }
+        : null;
+
+    const currentPhaseOnPace: boolean | null = currentPhaseBenchmark
+      ? currentPhaseBenchmark.days <= currentPhaseBenchmark.max_days
+      : null;
 
     // Canonical single "is the search healthy right now?" boolean — the AND of
     // the two pacing signals the status page already combines client-side to
@@ -775,12 +814,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // typical range. Null in exactly the same states as current_phase_on_pace
     // — terminal/non-progressing/placed phases, or any phase without a typical
     // duration — so a paused or closed search never reads a misleading percent.
-    let phasePercent: number | null = null;
-    if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
-      if (currentPhaseTypical) {
-        phasePercent = Math.round(Math.min(1, Math.max(0, daysInPhase / currentPhaseTypical.max_days)) * 100);
-      }
-    }
+    const phasePercent: number | null = currentPhaseBenchmark
+      ? Math.round(Math.min(1, Math.max(0, currentPhaseBenchmark.days / currentPhaseBenchmark.max_days)) * 100)
+      : null;
 
     // Canonical magnitude of how far the current phase has run *past* its
     // typical-max benchmark — the exact-days companion to the current_phase_
@@ -802,12 +838,10 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // <= typical.max_days), so a healthy search never carries a "0 days over" —
     // it reads as a bare absence, matching the pre-pave-only precedent of the
     // v1.34 typical_* and v1.46 activity_delta_7d fields.
-    let daysOverTypicalPhase: number | null = null;
-    if (typeof daysInPhase === 'number' && isProgressingPhase(row.status)) {
-      if (currentPhaseTypical && daysInPhase > currentPhaseTypical.max_days) {
-        daysOverTypicalPhase = daysInPhase - currentPhaseTypical.max_days;
-      }
-    }
+    const daysOverTypicalPhase: number | null =
+      currentPhaseBenchmark && currentPhaseBenchmark.days > currentPhaseBenchmark.max_days
+        ? currentPhaseBenchmark.days - currentPhaseBenchmark.max_days
+        : null;
 
     const progressPercent = computeProgressPercent(phase.step, row.status, daysInPhase);
 
@@ -1468,6 +1502,13 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         activity_count_this_phase: activityCountThisPhase,
         velocity_trend: velocityTrend,
         is_ramping_up: isRampingUp,
+        // Canonical human copy + narrative order for the per-type keys used by
+        // activity_breakdown, activity_breakdown_this_phase and
+        // last_activity_type — see PUBLIC_ACTIVITY_LABELS. Makes those three
+        // fields self-describing so the status page and roadmap #4's reminder
+        // email render "5 candidates sourced, 2 candidates presented" off one
+        // source of truth instead of each carrying its own copy of the wording.
+        activity_labels: PUBLIC_ACTIVITY_LABELS,
         activity_breakdown: activityBreakdown,
         activity_breakdown_this_phase: activityBreakdownThisPhase,
         recent_activities: activities.map((a) => ({
