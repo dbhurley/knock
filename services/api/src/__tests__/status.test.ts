@@ -412,6 +412,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak phase_catalog on 404 (404 envelope stays exactly error + message)', async () => {
+    // phase_catalog is the canonical ordered journey catalog that makes the
+    // whole arc self-describing (label / step / explainer / typical duration per
+    // phase). Like activity_labels it carries no search-specific data — it's
+    // static copy — so it discloses nothing about a particular search. It is
+    // asserted anyway for the same reason: the contract this endpoint holds is
+    // about the *envelope*, not about which fields happen to be sensitive.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-962',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('phase_catalog' in body), 'phase_catalog must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak current_phase_on_pace on 404 (no pacing-verdict hints to anonymous callers)', async () => {
     // current_phase_on_pace is the server-computed boolean verdict on whether
     // the current phase is still within its typical-max benchmark. Like the
