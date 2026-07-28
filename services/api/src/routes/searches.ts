@@ -176,6 +176,50 @@ const PUBLIC_STATUS_FORWARD: string[] = [
 // every downstream count at once instead of leaving a hardcoded `8` behind.
 const PHASE_TOTAL = PUBLIC_STATUS_FORWARD.length;
 
+// Canonical catalog of the whole forward journey, in order — one self-describing
+// entry per phase carrying its raw code, human label, 1-based step, plain-English
+// explainer, and typical-duration benchmark.
+//
+// This is the phase analogue of PUBLIC_ACTIVITY_LABELS (v1.56), and it closes the
+// same class of duplication for the largest remaining case. The response already
+// tells a consumer which phase a search is in (`status`, `phase_label`,
+// `phase_explainer`, `phase_duration_typical`) and which phases it has been
+// through (`phase_history`), but nothing described the *journey itself* — so any
+// surface that wants to render the whole arc has to carry its own copy of all
+// eight labels, all eleven explainer strings, and every typical-duration range.
+// The status page does exactly that (its FORWARD_PHASES + PHASE_EXPLAINERS maps),
+// which is why a copy edit to a phase explainer has to be made twice today even
+// though v1.9 surfaced `phase_explainer` specifically to stop that — v1.9 made
+// the *current* phase's copy canonical, but the journey overview renders all
+// eight at once and had nowhere to read them from. Roadmap #4's reminder email
+// has the same need ("see the whole arc" deep-links straight to the journey
+// view), and the PDF status report will too.
+//
+// Derived from the four existing maps rather than restated, so the catalog can
+// never disagree with the per-phase fields computed from those same maps.
+// Module-level (like PUBLIC_ACTIVITY_LABELS) so it isn't rebuilt per request.
+// Static copy — it says nothing about a particular search — but it stays on the
+// verified success shape like every other field, since the contract here is
+// about the envelope, not about which fields happen to be sensitive.
+const PUBLIC_PHASE_CATALOG: ReadonlyArray<{
+  phase: string;
+  label: string;
+  step: number;
+  explainer: string | null;
+  typical_min_days: number | null;
+  typical_max_days: number | null;
+}> = PUBLIC_STATUS_FORWARD.map((phase, i) => {
+  const typical = PUBLIC_STATUS_TYPICAL_DURATION[phase] ?? null;
+  return {
+    phase,
+    label: PUBLIC_STATUS_PHASES[phase]?.label ?? phase,
+    step: PUBLIC_STATUS_PHASES[phase]?.step ?? i + 1,
+    explainer: PUBLIC_STATUS_EXPLAINERS[phase] ?? null,
+    typical_min_days: typical?.min_days ?? null,
+    typical_max_days: typical?.max_days ?? null,
+  };
+});
+
 // Milliseconds in a day. The status handler does day-granularity date math in
 // ~10 places (days_in_phase, days_since_last_activity, engagement_age_days,
 // each phase_history duration, placement_age_days, the completion-window and
@@ -795,10 +839,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // misleading verdict. Positive-only by design like current_phase_on_pace:
     // a phase that has slipped past its benchmark (current_phase_on_pace ===
     // false) or gone quiet (is_stalled) reads false, not a bare absence.
-    let isOnTrack: boolean | null = null;
-    if (currentPhaseOnPace !== null) {
-      isOnTrack = currentPhaseOnPace === true && !isStalled;
-    }
+    const isOnTrack: boolean | null =
+      currentPhaseOnPace === null ? null : currentPhaseOnPace === true && !isStalled;
 
     // Canonical within-current-phase completion percent (0–100). It's the
     // intra-phase fraction computeProgressPercent already blends into the
@@ -1140,33 +1182,19 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // finished phase yet), and null in the same non-forward states where
     // phase_history carries no completed entry. Nested-shape parity with
     // phase_history, so the existing phase_history 404-leak test already covers it.
-    let latestCompletedPhase:
-      | {
-          phase: string;
-          label: string;
-          entered_at: string;
-          exited_at: string | null;
-          duration_days: number;
-          typical_min_days: number | null;
-          typical_max_days: number | null;
-          on_pace: boolean | null;
-          days_over_typical: number | null;
-        }
-      | null = null;
+    //
+    // Built by spreading the matched phase_history entry rather than copying its
+    // fields out one at a time: the documented contract is *nested-shape parity*
+    // with phase_history, and an explicit field list quietly makes that a
+    // convention two places have to keep — v1.53's exited_at and v1.54's
+    // days_over_typical each had to be remembered here as well as in the map
+    // above, and the next per-entry field would too. The spread makes the parity
+    // structural, matching the currentPhaseBenchmark (v1.56) and
+    // PUBLIC_ACTIVITY_TYPES-from-labels (v1.56) hygiene. Byte-identical output.
+    let latestCompletedPhase: (typeof phaseHistory)[number] | null = null;
     for (let i = phaseHistory.length - 1; i >= 0; i--) {
-      const h = phaseHistory[i];
-      if (h.duration_days !== null) {
-        latestCompletedPhase = {
-          phase: h.phase,
-          label: h.label,
-          entered_at: h.entered_at,
-          exited_at: h.exited_at,
-          duration_days: h.duration_days,
-          typical_min_days: h.typical_min_days,
-          typical_max_days: h.typical_max_days,
-          on_pace: h.on_pace,
-          days_over_typical: h.days_over_typical,
-        };
+      if (phaseHistory[i].duration_days !== null) {
+        latestCompletedPhase = { ...phaseHistory[i] };
         break;
       }
     }
@@ -1432,6 +1460,13 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         phase_explainer: PUBLIC_STATUS_EXPLAINERS[row.status] ?? null,
         phase_step: phase.step,
         phase_total: PHASE_TOTAL,
+        // Canonical ordered catalog of the whole forward journey — label, step,
+        // explainer and typical-duration benchmark per phase (see
+        // PUBLIC_PHASE_CATALOG). Makes the journey itself self-describing, so
+        // the status page's full-journey overview and roadmap #4's reminder
+        // email render the same phase copy off one source of truth instead of
+        // each carrying its own eight-label, eleven-explainer map.
+        phase_catalog: PUBLIC_PHASE_CATALOG,
         phases_completed: phasesCompleted,
         phases_remaining: phasesRemaining,
         phases_on_pace: phasesOnPace,

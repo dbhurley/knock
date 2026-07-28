@@ -371,6 +371,47 @@
             return specs.length ? specs : ACTIVITY_LABELS;
         }
 
+        // Prefer the API's canonical phase_catalog over the local FORWARD_PHASES
+        // + PHASE_EXPLAINERS maps below. The journey overview renders all eight
+        // phases at once — labels, explainers, and typical-duration ranges — and
+        // that copy previously lived only here, even though v1.9 surfaced
+        // phase_explainer specifically so the *current* phase's wording wouldn't
+        // have to be maintained in two places. The catalog extends that to the
+        // whole arc, so a copy edit lands on the page and on roadmap #4's
+        // reminder email at once. Normalized to the local shape (key / label /
+        // explainer / typical string / typicalMax) so the render loop is
+        // identical either way. Falls back to the built-in maps on older API
+        // versions and on a malformed catalog, so a bad payload degrades to the
+        // built-in copy rather than blanking the journey — same contract as
+        // resolveActivityLabels().
+        function resolvePhaseCatalog(d) {
+            const local = FORWARD_PHASES.map(function(p) {
+                const m = (p.typical || '').match(/(\d+)\s*[–-]\s*(\d+)/);
+                return {
+                    key: p.key,
+                    label: p.label,
+                    explainer: PHASE_EXPLAINERS[p.key] || '',
+                    typical: p.typical,
+                    typicalMax: m ? parseInt(m[2], 10) : null
+                };
+            });
+            if (!Array.isArray(d.phase_catalog)) return local;
+            const specs = d.phase_catalog
+                .filter(function(p) { return p && p.phase && p.label; })
+                .map(function(p) {
+                    const hasSpan = typeof p.typical_min_days === 'number'
+                        && typeof p.typical_max_days === 'number';
+                    return {
+                        key: p.phase,
+                        label: p.label,
+                        explainer: p.explainer || '',
+                        typical: hasSpan ? (p.typical_min_days + '–' + p.typical_max_days + ' days') : null,
+                        typicalMax: hasSpan ? p.typical_max_days : null
+                    };
+                });
+            return specs.length ? specs : local;
+        }
+
         // Turn one of the API's per-type breakdown objects (activity_breakdown
         // or activity_breakdown_this_phase) into a readable "5 candidates
         // sourced, 2 candidates presented" list. Zero-count types are dropped
@@ -1523,7 +1564,12 @@
                         }
                     });
                 }
-                FORWARD_PHASES.forEach(function(p, i) {
+                // Phase copy for this render — the API's canonical phase_catalog
+                // when present, the local FORWARD_PHASES + PHASE_EXPLAINERS maps
+                // otherwise. Resolved once so every row of the journey reads
+                // from the same catalog.
+                const phaseSpecs = resolvePhaseCatalog(d);
+                phaseSpecs.forEach(function(p, i) {
                     const step = i + 1;
                     const li = document.createElement('li');
                     li.setAttribute('data-step', String(step));
@@ -1538,7 +1584,7 @@
                     li.appendChild(lbl);
                     const ex = document.createElement('div');
                     ex.className = 'jl-explainer';
-                    ex.textContent = PHASE_EXPLAINERS[p.key] || '';
+                    ex.textContent = p.explainer;
                     li.appendChild(ex);
                     if (p.typical) {
                         const typ = document.createElement('div');
@@ -1611,14 +1657,15 @@
                             //
                             // Prefer the API's canonical on_pace flag (one source
                             // of truth, shared with the planned reminder email /
-                            // PDF). Fall back to parsing the typical-max benchmark
-                            // from the FORWARD_PHASES "14–28 days" string on older
-                            // API versions that don't return the field yet.
+                            // PDF). Fall back to the resolved catalog's own
+                            // typical-max benchmark on older API versions that
+                            // don't return the field yet — the catalog carries it
+                            // as an integer, so the row no longer has to regex the
+                            // "14–28 days" display string back apart.
                             if (typeof hist.on_pace === 'boolean') {
                                 onPace = hist.on_pace;
-                            } else {
-                                const m = (p.typical || '').match(/(\d+)\s*[–-]\s*(\d+)/);
-                                if (m && hist.duration_days <= parseInt(m[2], 10)) onPace = true;
+                            } else if (typeof p.typicalMax === 'number') {
+                                onPace = hist.duration_days <= p.typicalMax;
                             }
                         }
                         wh.textContent = whText;
@@ -1665,13 +1712,15 @@
                     // Denominator prefers the API's canonical phase_total (one
                     // source of truth, shared with the tab title / progress bar /
                     // ARIA label above, which already read d.phase_total) and
-                    // falls back to the local FORWARD_PHASES.length only on older
-                    // API versions — so a future phase added to the journey can't
-                    // leave this summary reading a different total than the rest
-                    // of the page.
+                    // falls back only on older API versions — so a future phase
+                    // added to the journey can't leave this summary reading a
+                    // different total than the rest of the page. The fallback is
+                    // the resolved catalog's own length (i.e. the number of rows
+                    // actually rendered just above), not the local map's, so the
+                    // summary can't disagree with the list it summarizes.
                     const phaseTotal = (typeof d.phase_total === 'number' && d.phase_total > 0)
                         ? d.phase_total
-                        : FORWARD_PHASES.length;
+                        : phaseSpecs.length;
                     const done = (typeof d.phases_completed === 'number')
                         ? d.phases_completed
                         : (d.status === 'placed'
