@@ -555,13 +555,36 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     const currentPhaseTypical = PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null;
 
     // Compute the next milestone (label only — clients don't see internal codes).
+    //
+    // Resolved as one entry from the canonical PUBLIC_PHASE_CATALOG (v1.57)
+    // rather than three separate keyed lookups. The next-phase preview block on
+    // the status page renders a label, an explainer, and a typical-duration
+    // range — the exact three fields the catalog was introduced to make
+    // self-describing — but they were each looked up independently in
+    // PUBLIC_STATUS_PHASES / PUBLIC_STATUS_EXPLAINERS / PUBLIC_STATUS_TYPICAL_
+    // DURATION, so the one part of the response that describes a *forward*
+    // phase was the part not reading from the forward-journey catalog. Since
+    // the next phase is by definition a forward phase, its catalog entry is
+    // exactly the right source, and reading all three off one entry means the
+    // preview block can't disagree with the journey overview the page renders
+    // from the same catalog. Byte-identical output — the catalog is derived
+    // from those same maps, and every forward phase has an entry in each.
+    // Same one-source-of-truth hygiene as the currentPhaseTypical (v1.41) and
+    // latest_completed_phase spread (v1.57) passes; the bound also now reads
+    // PHASE_TOTAL rather than re-taking the forward list's length (v1.39).
     const forwardIdx = PUBLIC_STATUS_FORWARD.indexOf(row.status);
-    const nextStatus = forwardIdx >= 0 && forwardIdx < PUBLIC_STATUS_FORWARD.length - 1
-      ? PUBLIC_STATUS_FORWARD[forwardIdx + 1]
+    const nextPhaseSpec = forwardIdx >= 0 && forwardIdx < PHASE_TOTAL - 1
+      ? PUBLIC_PHASE_CATALOG[forwardIdx + 1]
       : null;
-    const nextMilestoneLabel = nextStatus
-      ? PUBLIC_STATUS_PHASES[nextStatus]?.label ?? null
-      : null;
+    const nextMilestoneLabel = nextPhaseSpec?.label ?? null;
+    // Re-nested into the { min_days, max_days } shape next_phase_duration_typical
+    // has always carried (the catalog flattens it to typical_min/max_days so each
+    // entry stays a flat record); null for a next phase with no typical duration,
+    // matching the prior `?? null` lookup.
+    const nextPhaseTypical =
+      nextPhaseSpec && nextPhaseSpec.typical_min_days !== null && nextPhaseSpec.typical_max_days !== null
+        ? { min_days: nextPhaseSpec.typical_min_days, max_days: nextPhaseSpec.typical_max_days }
+        : null;
 
     // progressPercent is computed after daysInPhase below so it can include
     // intra-phase smoothing — see computeProgressPercent().
@@ -933,7 +956,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // has reached or passed its typical max. Null whenever the ETA is null.
     let nextMilestoneEta: string | null = null;
     let daysUntilNextMilestone: number | null = null;
-    if (nextStatus && isProgressingPhase(row.status)) {
+    if (nextPhaseSpec && isProgressingPhase(row.status)) {
       if (currentPhaseTypical) {
         // daysInPhase is floored and only assigned when ms >= 0, so it's already
         // ≥ 0 (or null → 0 via ??); the outer Math.max(0, …) still clamps the
@@ -1478,8 +1501,8 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         next_milestone_eta: nextMilestoneEta,
         days_until_next_milestone: daysUntilNextMilestone,
         weeks_until_next_milestone: weeksUntilNextMilestone,
-        next_phase_explainer: nextStatus ? PUBLIC_STATUS_EXPLAINERS[nextStatus] ?? null : null,
-        next_phase_duration_typical: nextStatus ? PUBLIC_STATUS_TYPICAL_DURATION[nextStatus] ?? null : null,
+        next_phase_explainer: nextPhaseSpec?.explainer ?? null,
+        next_phase_duration_typical: nextPhaseTypical,
         status_changed_at: row.status_changed_at,
         days_in_phase: daysInPhase,
         days_since_last_activity: daysSinceLastActivity,

@@ -526,6 +526,21 @@
         // frontend daysToWeeks() helper and the server-side DAY_MS hoist.
         const DAY_MS = 86400000;
 
+        // The fortnight boundary every days→weeks display on the page switches
+        // at: a span reads in weeks once it's at or past 14 days, and in exact
+        // days below that. The frontend mirror of the API's WEEKS_THRESHOLD_DAYS
+        // (v1.44), which hoisted the same literal out of six server-side gates.
+        // The page had it open-coded at six sites too (the next-milestone
+        // countdown, the estimated-weeks range, placement age, follow-up
+        // remaining, engagement age, and the last-activity recency anchor), so a
+        // future tweak could leave one surface switching to weeks at a different
+        // threshold than the rest. Same one-source-of-truth hygiene as the
+        // frontend DAY_MS (v1.45) and daysToWeeks() (v1.42) mirrors. The
+        // target-start countdown's deliberately wider "> 30" ("more than a month
+        // out") boundary is its own rule and is intentionally left alone, exactly
+        // as on the server.
+        const WEEKS_THRESHOLD_DAYS = 14;
+
         function fmtDate(iso) {
             if (!iso) return '—';
             try {
@@ -807,7 +822,7 @@
                             // the two never disagree; days when the next phase is
                             // close in.
                             let countdown;
-                            if (daysUntil >= 14) {
+                            if (daysUntil >= WEEKS_THRESHOLD_DAYS) {
                                 const w = (typeof d.weeks_until_next_milestone === 'number')
                                     ? d.weeks_until_next_milestone
                                     : daysToWeeks(daysUntil);
@@ -859,7 +874,7 @@
                 if (edr && typeof edr.min_days === 'number' && typeof edr.max_days === 'number'
                     && edr.max_days > 0) {
                     const fmtSpan = function (lo, hi) {
-                        if (hi >= 14) {
+                        if (hi >= WEEKS_THRESHOLD_DAYS) {
                             // Prefer the API's canonical weeks range (one source
                             // of truth with the planned reminder email / PDF);
                             // fall back to local rounding on older API versions.
@@ -1076,7 +1091,7 @@
                 let ageTag;
                 if (placedAgeDays === 0) {
                     ageTag = 'today';
-                } else if (placedAgeDays >= 14) {
+                } else if (placedAgeDays >= WEEKS_THRESHOLD_DAYS) {
                     const wks = (typeof d.placement_age_weeks === 'number')
                         ? d.placement_age_weeks
                         : daysToWeeks(placedAgeDays);
@@ -1098,7 +1113,7 @@
                     // placement_followup_weeks_remaining (one source of truth);
                     // fall back to the same rounding locally on older API versions.
                     let remainingStr;
-                    if (remaining >= 14) {
+                    if (remaining >= WEEKS_THRESHOLD_DAYS) {
                         const wks = (typeof d.placement_followup_weeks_remaining === 'number')
                             ? d.placement_followup_weeks_remaining
                             : daysToWeeks(remaining);
@@ -1141,7 +1156,7 @@
                 if (!isNaN(ageDays) && ageDays >= 0) {
                     if (ageDays === 0) {
                         openedRelEl.textContent = '(today)';
-                    } else if (ageDays >= 14) {
+                    } else if (ageDays >= WEEKS_THRESHOLD_DAYS) {
                         // Long engagements (the 10–16-week stickiness window)
                         // read better in weeks. Prefer the API's canonical
                         // engagement_age_weeks (one source of truth); fall back to
@@ -1209,7 +1224,7 @@
                         let recency;
                         if (dsl === 0) {
                             recency = 'latest today';
-                        } else if (dsl >= 14) {
+                        } else if (dsl >= WEEKS_THRESHOLD_DAYS) {
                             const wks = (typeof d.weeks_since_last_activity === 'number')
                                 ? d.weeks_since_last_activity
                                 : daysToWeeks(dsl);
@@ -1838,7 +1853,20 @@
                 // content:attr(data-icon), which SRs already skip.) Same
                 // a11y-as-stickiness rationale as the v1.20/v1.26 passes.
                 const iconEl = document.getElementById('activity-icon');
-                const headlineType = (acts[0] && acts[0].activity_type) || null;
+                // Prefer the canonical last_activity_type (v1.47) over reaching
+                // into recent_activities[0] for it. The headline card's other two
+                // reads — the summary and the timestamp — already come from the
+                // top-level last_activity_* fields the API hoists off the same
+                // `latest` row, so the glyph was the one part of the card
+                // resolving the same update through a different path. Byte-
+                // identical today (both name the same row), but it makes the
+                // whole card read from one source, and it's the page consumer
+                // v1.47 shipped the field as a pre-pave for — the same
+                // page-consumes-the-prior-pre-pave cadence as v1.54 consuming
+                // exited_at and v1.55 consuming activity_breakdown_this_phase.
+                // Falls back to recent_activities[0] on older API versions.
+                const headlineType = d.last_activity_type ||
+                    (acts[0] && acts[0].activity_type) || null;
                 const glyph = headlineType ? ACTIVITY_ICONS[headlineType] : null;
                 if (glyph) {
                     iconEl.textContent = glyph;
