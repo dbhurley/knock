@@ -325,6 +325,27 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak next_milestone_phase on 404 (no roadmap hints to anonymous callers)', async () => {
+    // next_milestone_phase is the raw phase code of the phase *after* the
+    // current one — the machine-readable companion to next_milestone_label.
+    // It's keyed by the current phase just as directly as the label and the
+    // next-phase preview pair, so observing it on the unauthenticated path
+    // would let an anonymous caller infer both that the search exists and
+    // exactly where it sits in the journey.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-940',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('next_milestone_phase' in body), 'next_milestone_phase must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('does not leak velocity-trend fields on 404 (no week-over-week hints to anonymous callers)', async () => {
     // activity_count_prev_7d and velocity_trend describe the previous 7-day
     // window and the categorical comparison against it. Both belong only on
