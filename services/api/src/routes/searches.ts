@@ -114,6 +114,20 @@ const PUBLIC_STATUS_PHASES: Record<string, { label: string; step: number }> = {
   on_hold:       { label: 'On hold',                 step: 0 },
 };
 
+// Canonical human label for a raw status code, falling back to the code itself
+// for an unknown status. This exact `PUBLIC_STATUS_PHASES[x]?.label ?? x`
+// expression was open-coded at four sites — the phase catalog, both ends of
+// describeStatusChange(), and each phase_history entry's `label` — every one of
+// which exists precisely so a consumer never has to turn a status code into
+// English itself. Naming it once means the page, the timeline copy, the journey
+// archive and the catalog can't end up labelling the same phase differently
+// (and an unknown status can't fall back one way in one place and another in
+// the next). Same one-source-of-truth hygiene as isProgressingPhase() (v1.34)
+// and daysToWeeks() (v1.32) — byte-identical to the inline expression.
+function phaseLabelFor(status: string): string {
+  return PUBLIC_STATUS_PHASES[status]?.label ?? status;
+}
+
 // Plain-English explainer per phase. Lives in the API (not just the status
 // page's frontend map) so the same copy can render in future surfaces — the
 // status-change reminder email cron from roadmap #4 needs identical wording,
@@ -212,7 +226,7 @@ const PUBLIC_PHASE_CATALOG: ReadonlyArray<{
   const typical = PUBLIC_STATUS_TYPICAL_DURATION[phase] ?? null;
   return {
     phase,
-    label: PUBLIC_STATUS_PHASES[phase]?.label ?? phase,
+    label: phaseLabelFor(phase),
     step: PUBLIC_STATUS_PHASES[phase]?.step ?? i + 1,
     explainer: PUBLIC_STATUS_EXPLAINERS[phase] ?? null,
     typical_min_days: typical?.min_days ?? null,
@@ -455,8 +469,8 @@ const PUBLIC_ACTIVITY_TYPES = new Set(PUBLIC_ACTIVITY_LABELS.map((l) => l.type))
 // Branches are ordered most-specific first so terminal/pause states win
 // over the default forward-progression label.
 function describeStatusChange(fromStatus: string, toStatus: string): string {
-  const fromLabel = PUBLIC_STATUS_PHASES[fromStatus]?.label ?? fromStatus;
-  const toLabel = PUBLIC_STATUS_PHASES[toStatus]?.label ?? toStatus;
+  const fromLabel = phaseLabelFor(fromStatus);
+  const toLabel = phaseLabelFor(toStatus);
   if (toStatus === 'on_hold')        return `Search paused: ${fromLabel} → ${toLabel}`;
   if (toStatus === 'cancelled')      return `Search cancelled: ${fromLabel} → ${toLabel}`;
   if (toStatus === 'closed_no_fill') return `Search closed without placement: ${fromLabel} → ${toLabel}`;
@@ -577,6 +591,22 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       ? PUBLIC_PHASE_CATALOG[forwardIdx + 1]
       : null;
     const nextMilestoneLabel = nextPhaseSpec?.label ?? null;
+    // Raw phase code of the next phase — the machine-readable companion to
+    // next_milestone_label, and the one member the next-phase preview family
+    // was missing. Every other place the response names a phase carries both
+    // forms: phase_history entries and latest_completed_phase each pair a
+    // `phase` enum with a human `label`, phase_catalog does the same, and the
+    // current phase is named by both `status` and `phase_label`. The next phase
+    // was named *only* in English, so a consumer that needs to branch on which
+    // phase is coming — roadmap #4's reminder email, which keys its template off
+    // enums rather than copy (the exact rationale v1.47 surfaced
+    // last_activity_type for) — had to either string-match the display label or
+    // re-scan phase_catalog for the entry after phase_step. Resolved off the
+    // same nextPhaseSpec catalog entry the label / explainer / typical duration
+    // already come from (v1.58), so it costs nothing and can never disagree
+    // with them. Null in exactly the same states as next_milestone_label:
+    // terminal/non-progressing statuses and `placed`, which have no next phase.
+    const nextMilestonePhase = nextPhaseSpec?.phase ?? null;
     // Re-nested into the { min_days, max_days } shape next_phase_duration_typical
     // has always carried (the catalog flattens it to typical_min/max_days so each
     // entry stays a flat record); null for a next phase with no typical duration,
@@ -1178,7 +1208,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       }
       return {
         phase: entry.phase,
-        label: PUBLIC_STATUS_PHASES[entry.phase]?.label ?? entry.phase,
+        label: phaseLabelFor(entry.phase),
         entered_at: entry.entered_at,
         exited_at: next?.entered_at ?? null,
         duration_days: durationDays,
@@ -1498,6 +1528,10 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         days_over_typical_total: daysOverTypicalTotal,
         progress_percent: progressPercent,
         next_milestone_label: nextMilestoneLabel,
+        // Raw enum of the next phase, alongside its human label — so a consumer
+        // branching on "which phase is coming next?" reads a code rather than
+        // parsing copy. See nextMilestonePhase.
+        next_milestone_phase: nextMilestonePhase,
         next_milestone_eta: nextMilestoneEta,
         days_until_next_milestone: daysUntilNextMilestone,
         weeks_until_next_milestone: weeksUntilNextMilestone,
