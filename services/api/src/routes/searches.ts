@@ -147,6 +147,27 @@ const PUBLIC_STATUS_EXPLAINERS: Record<string, string> = {
   on_hold:           "Search paused. Reach out to Janet when you're ready to resume.",
 };
 
+// Canonical human copy for each `search_urgency` enum value — the urgency
+// analogue of what phaseLabelFor() is for a raw status code.
+//
+// `search_urgency` (v1.7) ships to the client as the bare intake enum
+// (`immediate` / `standard` / `flexible`), and the status page turns it into
+// the pill it renders ("Immediate" / "Standard pace" / "Flexible timing") with
+// a ternary that lives only in the frontend. That's the same duplication class
+// v1.9 closed for phase_explainer, v1.22 for the per-phase `label`, v1.56 for
+// activity_labels and v1.57 for phase_catalog: it's the one enum still handed
+// to consumers with no English attached, so roadmap #4's reminder email — which
+// wants to set pacing expectations in the same words the page uses ("this is a
+// standard-pace search") — could only produce that copy by re-implementing the
+// page's ternary. Surfacing the resolved label as `search_urgency_label` makes
+// the enum self-describing. Null for an unrecognised/absent urgency, so the
+// page's badge stays hidden exactly as it does today.
+const PUBLIC_URGENCY_LABELS: Record<string, string> = {
+  immediate: 'Immediate',
+  standard:  'Standard pace',
+  flexible:  'Flexible timing',
+};
+
 // A progressing search is "stalled" when the public-visible timeline has been
 // quiet for a full week *and* the current phase has dragged for two weeks.
 // Both thresholds matter: a fresh phase shouldn't trigger the flag just
@@ -320,7 +341,12 @@ function computeProgressPercent(
   if (isProgressingPhase(status)) {
     const typical = PUBLIC_STATUS_TYPICAL_DURATION[status];
     let intra = 0;
-    if (typical && typeof daysInPhase === 'number' && daysInPhase >= 0) {
+    // No `daysInPhase >= 0` guard: the caller floors it and only assigns it
+    // when ms >= 0, so it's already non-negative wherever it isn't null. Same
+    // redundant-guard cleanup as the v1.50 per-phase FILTER and the v1.52
+    // next-milestone inner clamp, matching CLAUDE.md's "no error handling for
+    // impossible scenarios" guidance.
+    if (typical && typeof daysInPhase === 'number') {
       intra = Math.min(1, daysInPhase / typical.max_days);
     }
     const combined = ((phaseStep - 1) + intra) / PHASE_TOTAL;
@@ -556,7 +582,19 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // already follows by sharing one computeCompletionWindow() call.
     const nowMs = Date.now();
 
-    const phase = PUBLIC_STATUS_PHASES[row.status] ?? { label: row.status, step: 0 };
+    // The label read goes through phaseLabelFor() — this was the fifth
+    // open-coded copy of `PUBLIC_STATUS_PHASES[x]?.label ?? x`, written as a
+    // whole-record `?? { label: row.status, step: 0 }` fallback rather than the
+    // bare expression, which is why the v1.59 pass that centralised the other
+    // four missed it. It's the site that names the *current* phase — the one a
+    // consumer is most likely to compare against a phase_history entry's label
+    // or a phase_catalog entry's — so it's the last place that should be able
+    // to label a phase differently from the rest of the response.
+    // Byte-identical: phaseLabelFor() encodes exactly this fallback.
+    const phase = {
+      label: phaseLabelFor(row.status),
+      step: PUBLIC_STATUS_PHASES[row.status]?.step ?? 0,
+    };
 
     // Typical-duration benchmark for the *current* phase, resolved once. The
     // same PUBLIC_STATUS_TYPICAL_DURATION[row.status] lookup was previously
@@ -1571,6 +1609,14 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         candidates_presented: row.candidates_presented ?? 0,
         candidates_interviewing: row.candidates_interviewing ?? 0,
         search_urgency: row.search_urgency ?? null,
+        // Canonical human copy for the search_urgency enum — see
+        // PUBLIC_URGENCY_LABELS. The urgency analogue of phase_label: the page
+        // renders this pill and roadmap #4's reminder email quotes the same
+        // pacing wording, so neither has to carry its own copy of the mapping.
+        // Null for an absent/unrecognised urgency, matching the raw field.
+        search_urgency_label: row.search_urgency
+          ? PUBLIC_URGENCY_LABELS[row.search_urgency] ?? null
+          : null,
         last_activity_at: latest?.created_at ?? null,
         last_activity_summary: latest?.description ?? null,
         // Machine-readable activity_type of the most recent public-visible

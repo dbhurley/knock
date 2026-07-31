@@ -1065,11 +1065,29 @@
             // often, and 'flexible' clients aren't surprised by a longer slate.
             const urgencyEl = document.getElementById('urgency-badge');
             urgencyEl.className = 'urgency-badge';
+            urgencyEl.removeAttribute('title');
+            urgencyEl.removeAttribute('aria-label');
             if (d.search_urgency === 'immediate' || d.search_urgency === 'standard' || d.search_urgency === 'flexible') {
                 urgencyEl.classList.add(d.search_urgency);
-                urgencyEl.textContent = d.search_urgency === 'immediate'
-                    ? 'Immediate'
-                    : (d.search_urgency === 'flexible' ? 'Flexible timing' : 'Standard pace');
+                // Prefer the API's canonical search_urgency_label (one source of
+                // truth, shared with the planned reminder email / PDF) and fall
+                // back to the local mapping only on older API versions.
+                const urgencyLabel = (typeof d.search_urgency_label === 'string' && d.search_urgency_label)
+                    ? d.search_urgency_label
+                    : (d.search_urgency === 'immediate'
+                        ? 'Immediate'
+                        : (d.search_urgency === 'flexible' ? 'Flexible timing' : 'Standard pace'));
+                urgencyEl.textContent = urgencyLabel;
+                // The pill renders as a bare uppercase word beside the reference
+                // number, so on its own a screen reader announces "Immediate"
+                // with nothing to say what is immediate — and a sighted client
+                // gets no hover affordance either. Naming the dimension in a
+                // title + aria-label makes the badge legible on both surfaces,
+                // the same a11y-as-stickiness rationale as the v1.20 progress
+                // bar, v1.26 velocity chip / breakdown strip, v1.38 pace tag,
+                // v1.43 headline glyph and v1.56 journey-range passes.
+                urgencyEl.title = 'Search urgency: ' + urgencyLabel;
+                urgencyEl.setAttribute('aria-label', 'Search urgency: ' + urgencyLabel);
                 urgencyEl.style.display = 'inline-block';
             } else {
                 urgencyEl.style.display = 'none';
