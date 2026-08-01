@@ -606,6 +606,48 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // to the prior per-site `?? null` lookups.
     const currentPhaseTypical = PUBLIC_STATUS_TYPICAL_DURATION[row.status] ?? null;
 
+    // Canonical "has the search concluded?" classifications. `is_terminal` is
+    // true for any concluded state (placed / cancelled / closed_no_fill);
+    // `is_negative_terminal` is the subset that concluded without a placement.
+    // The status page derives both client-side today at five separate render
+    // sites (velocity-chip suppression, the target-start countdown, the step
+    // count, the progress bar, the journey pin) via open-coded arrays — the
+    // frontend mirror of the API's TERMINAL_STATUSES hoist. Surfacing
+    // them server-side makes that "has it ended?" read one source of truth (the
+    // page prefers these fields and falls back to its local arrays only on older
+    // API versions) and pre-paves roadmap #4's reminder-email listener: a
+    // concluded search should get a wrap-up note rather than a progress/pacing
+    // nudge, and that branch keys off one canonical boolean instead of the cron
+    // re-deriving terminal state itself. Same one-source-of-truth rationale as
+    // is_on_track (v1.48) and all_phases_on_pace (v1.37). Always booleans (never
+    // null) — a search always either has or hasn't concluded.
+    const isTerminal = TERMINAL_STATUSES.has(row.status);
+    const isNegativeTerminal = NEGATIVE_TERMINAL_STATUSES.has(row.status);
+    // Canonical positive-terminal flag — the third and final member of the
+    // conclusion-state family alongside is_terminal / is_negative_terminal
+    // (v1.49): true only when the search reached a *successful* placement, the
+    // one terminal state that keeps its celebration visuals. It's exactly
+    // `is_terminal && !is_negative_terminal`, but surfacing it directly lets a
+    // consumer key the celebration branch off one canonical boolean rather than
+    // re-deriving the conjunction — the status page gates its placement card on
+    // `status === 'placed'` today, and roadmap #4's reminder-email listener
+    // wants to send a *celebration* wrap-up on placement vs the gentler
+    // debrief-or-restart tone is_negative_terminal already flags. Same
+    // one-source-of-truth rationale and always-boolean (never null) contract as
+    // its two siblings.
+    //
+    // The three flags are resolved here, immediately after the phase itself,
+    // rather than just before reply.send() where they were first written. They
+    // depend on nothing but row.status, and the handler had gone on to
+    // open-code the same classification twice below — `row.status === 'placed'`
+    // gating the whole-journey phases_completed tally and the post-placement
+    // follow-up window — even though isPlaced is exactly that comparison given
+    // the two sets. Hoisting them above their consumers means the handler
+    // classifies the conclusion state once and every downstream field reads the
+    // same flag the response returns, so a future change to how "placed" is
+    // determined can't leave those two blocks behind. Byte-identical output.
+    const isPlaced = isTerminal && !isNegativeTerminal;
+
     // Compute the next milestone (label only — clients don't see internal codes).
     //
     // Resolved as one entry from the canonical PUBLIC_PHASE_CATALOG (v1.57)
@@ -1065,7 +1107,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // would misrepresent a pause or a close-without-placement as progress —
     // the status page hides the journey overview for those states anyway.
     let phasesCompleted: number | null = null;
-    if (row.status === 'placed') {
+    if (isPlaced) {
       phasesCompleted = PHASE_TOTAL; // journey fully complete
     } else if (isForwardPhase(row.status)) {
       phasesCompleted = Math.max(0, phase.step - 1);
@@ -1432,7 +1474,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     let placementFollowupPercent: number | null = null;
     let placementAgeDays: number | null = null;
     let placementAgeWeeks: number | null = null;
-    if (row.status === 'placed' && row.status_changed_at) {
+    if (isPlaced && row.status_changed_at) {
       const placedTs = new Date(row.status_changed_at).getTime();
       if (!Number.isNaN(placedTs)) {
         placedAt = row.status_changed_at;
@@ -1493,6 +1535,36 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       weeksUntilTargetStart = daysToWeeks(daysUntilTargetStart);
     }
 
+    // Canonical "will we place in time for the date you asked for?" boolean —
+    // true when even the *late* end of the estimated placement window lands on
+    // or before the client's target start date, false when the window runs past
+    // it. The response already carried both halves of that comparison
+    // (estimated_days_remaining.max_days and days_until_target_start), but
+    // nothing joined them, so the one question a school actually opens the page
+    // with — "is this search going to land before the seat has to be filled?" —
+    // was the client's own arithmetic across two numbers rendered in different
+    // parts of the card. Same one-source-of-truth rationale as is_on_track
+    // (v1.48), which collapsed the two pacing signals the page was ANDing
+    // client-side into one canonical verdict, and all_phases_on_pace (v1.37).
+    //
+    // Derived from the two canonical integers rather than from the ISO dates:
+    // both are day counts measured from the same request-time `nowMs`, so the
+    // verdict is day-granular by construction and can never disagree with the
+    // window and countdown rendered beside it (an ISO-timestamp comparison
+    // would also read a same-day placement as missing the target). Null
+    // whenever either input is null — no target date, or a terminal /
+    // non-progressing state where the completion window is meaningless — so a
+    // paused, closed, or target-less search never reads a verdict. The status
+    // page renders only the positive case, matching the positive-only design of
+    // its other pacing tags (the target-start countdown already carries the
+    // negative signal once a date has slipped), and roadmap #4's reminder email
+    // can open a reassuring "still comfortably ahead of your September start"
+    // line off the same boolean.
+    const placementWindowMeetsTarget: boolean | null =
+      estimatedDaysRemaining !== null && daysUntilTargetStart !== null
+        ? estimatedDaysRemaining.max_days <= daysUntilTargetStart
+        : null;
+
     // Canonical deep-link back to this status surface. POST /api/v1/intake
     // already returns this exact shape (PUBLIC_BASE_URL + /status?ref=…); echoing
     // it here makes the status response itself a single source of truth for the
@@ -1504,37 +1576,6 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // Built by the shared statusUrlFor() helper so the status response and the
     // intake response can never drift on the link format.
     const statusUrl = statusUrlFor(row.search_number);
-
-    // Canonical "has the search concluded?" classifications. `is_terminal` is
-    // true for any concluded state (placed / cancelled / closed_no_fill);
-    // `is_negative_terminal` is the subset that concluded without a placement.
-    // The status page derives both client-side today at five separate render
-    // sites (velocity-chip suppression, the target-start countdown, the step
-    // count, the progress bar, the journey pin) via open-coded arrays — the
-    // frontend mirror of the API's TERMINAL_STATUSES hoist. Surfacing
-    // them server-side makes that "has it ended?" read one source of truth (the
-    // page prefers these fields and falls back to its local arrays only on older
-    // API versions) and pre-paves roadmap #4's reminder-email listener: a
-    // concluded search should get a wrap-up note rather than a progress/pacing
-    // nudge, and that branch keys off one canonical boolean instead of the cron
-    // re-deriving terminal state itself. Same one-source-of-truth rationale as
-    // is_on_track (v1.48) and all_phases_on_pace (v1.37). Always booleans (never
-    // null) — a search always either has or hasn't concluded.
-    const isTerminal = TERMINAL_STATUSES.has(row.status);
-    const isNegativeTerminal = NEGATIVE_TERMINAL_STATUSES.has(row.status);
-    // Canonical positive-terminal flag — the third and final member of the
-    // conclusion-state family alongside is_terminal / is_negative_terminal
-    // (v1.49): true only when the search reached a *successful* placement, the
-    // one terminal state that keeps its celebration visuals. It's exactly
-    // `is_terminal && !is_negative_terminal`, but surfacing it directly lets a
-    // consumer key the celebration branch off one canonical boolean rather than
-    // re-deriving the conjunction — the status page gates its placement card on
-    // `status === 'placed'` today, and roadmap #4's reminder-email listener
-    // wants to send a *celebration* wrap-up on placement vs the gentler
-    // debrief-or-restart tone is_negative_terminal already flags. Same
-    // one-source-of-truth rationale and always-boolean (never null) contract as
-    // its two siblings.
-    const isPlaced = isTerminal && !isNegativeTerminal;
 
     reply.send({
       data: {
@@ -1598,6 +1639,11 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         target_start_date: row.target_start_date,
         days_until_target_start: daysUntilTargetStart,
         weeks_until_target_start: weeksUntilTargetStart,
+        // Does the estimated placement window land on or before the client's
+        // target start date? — see placementWindowMeetsTarget. The join of the
+        // two canonical integers already on the response, so no consumer has to
+        // compare them itself. Null when either is null.
+        placement_window_meets_target: placementWindowMeetsTarget,
         placed_at: placedAt,
         placement_followup_until: placementFollowupUntil,
         placement_followup_days_remaining: placementFollowupDaysRemaining,

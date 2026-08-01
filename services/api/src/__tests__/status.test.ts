@@ -1158,6 +1158,25 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
+  it('does not leak placement_window_meets_target on 404 (negative paths return no data)', async () => {
+    // The verdict joins the client's own target start date to how far the
+    // search still has to run, so observing it on the unauthenticated path
+    // would let an anonymous caller infer both that the search exists AND
+    // whether it is expected to land in time for the seat to be filled.
+    const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        search_number: 'KNK-0000-947',
+        contact_email: 'noone@example.com',
+      }),
+    });
+    assert.equal(res.status, 404);
+    const body = await res.json();
+    assert.ok(!('placement_window_meets_target' in body), 'placement_window_meets_target must not leak on 404');
+    assert.ok(!('data' in body), 'must not include data on 404');
+  });
+
   it('returns exactly { error, message } on 404 (whole-surface no-enumeration contract)', async () => {
     // Every negative-path test above locks one field at a time, which means a
     // future field added to the success shape is only covered once someone
