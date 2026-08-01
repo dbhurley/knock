@@ -120,6 +120,7 @@
         .phase-pacing .pace-tag { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 8px; background: #f3ead0; color: #8a6d1f; font-size: 0.68rem; font-weight: 600; vertical-align: middle; }
         .completion-window { font-size: 0.78rem; color: #6a5b1f; margin-top: 0.25rem; }
         .completion-window strong { color: #b8860b; font-weight: 600; }
+        .completion-window .pace-tag { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 8px; background: #f3ead0; color: #8a6d1f; font-size: 0.68rem; font-weight: 600; vertical-align: middle; }
         .last-completed { font-size: 0.78rem; color: #6a5b1f; margin-top: 0.25rem; }
         .last-completed strong { color: #8a6d1f; font-weight: 600; }
         .last-completed .pace-tag { display: inline-block; margin-left: 0.4rem; padding: 0 0.4rem; border-radius: 8px; background: #f3ead0; color: #8a6d1f; font-size: 0.68rem; font-weight: 600; vertical-align: middle; }
@@ -615,17 +616,21 @@
             // we want: novelty persists for the entire viewing session.
             const commitMark = !!(opts && opts.commitHighWaterMark);
 
-            // Append a gold "on pace" tag to an element, preceded by a real
+            // Append a gold reassurance tag to an element, preceded by a real
             // space text node so a screen reader announces "…days) on pace"
             // rather than running the two together into "…days)on pace" (the
             // CSS margin gives only visual separation, not an accessible one).
             // Shared by the current-phase pacing line and the "just wrapped"
-            // glance, which built the identical span inline before.
-            function appendPaceTag(el) {
+            // glance, which built the identical span inline before. `text` is
+            // optional so those two callers keep reading as-is; the placement
+            // window's "ahead of your target start" tag is the same pill with
+            // different copy, so it reuses the helper rather than re-stating
+            // the markup and the a11y-space contract a third time.
+            function appendPaceTag(el, text) {
                 el.appendChild(document.createTextNode(' '));
                 const pace = document.createElement('span');
                 pace.className = 'pace-tag';
-                pace.textContent = 'on pace';
+                pace.textContent = text || 'on pace';
                 el.appendChild(pace);
             }
 
@@ -691,12 +696,29 @@
             // which carry phase_step 8) so the tab never reads a misleading
             // "(8/8)" on a search that closed without a placement. Restored on
             // form reset.
+            // Journey length for this render — the API's canonical phase_total,
+            // falling back to the local forward-phase list only on older API
+            // versions. Every step-count surface on the card reads this one
+            // resolution (the pinned-tab title, the "Step 3 of 8" meta line, and
+            // the ARIA progressbar label), which previously each reached for
+            // d.phase_total on their own: the tab title fell back to a bare
+            // hardcoded 8 — the exact stale literal the API's own PHASE_TOTAL
+            // hoist (v1.31) was introduced to eliminate — while the two progress
+            // reads had no fallback at all and would have rendered "of undefined"
+            // against an older API. Same one-resolution-per-render hygiene as
+            // statusLink (v1.54), isTerminal (v1.52) and onTrack (v1.59). The
+            // journey summary below keeps its own resolution deliberately: its
+            // fallback is the length of the catalog it just rendered, so the
+            // summary can't disagree with the list it summarizes.
+            const phaseTotal = (typeof d.phase_total === 'number' && d.phase_total > 0)
+                ? d.phase_total
+                : FORWARD_PHASES.length;
             if (d.search_number && d.phase_label) {
                 const negTerminal = (typeof d.is_negative_terminal === 'boolean')
                     ? d.is_negative_terminal
                     : (NEGATIVE_TERMINAL_STATUSES.indexOf(d.status) !== -1);
                 const stepBit = (!negTerminal && typeof d.phase_step === 'number' && d.phase_step > 0)
-                    ? ' (' + d.phase_step + '/' + (d.phase_total || 8) + ')'
+                    ? ' (' + d.phase_step + '/' + phaseTotal + ')'
                     : '';
                 document.title = d.search_number + ' · ' + d.phase_label + stepBit + ' | Knock';
             }
@@ -756,9 +778,9 @@
             if (isProgressing) {
                 const pct = typeof d.progress_percent === 'number'
                     ? Math.max(4, d.progress_percent)
-                    : (d.phase_total ? Math.max(4, Math.round((d.phase_step / d.phase_total) * 100)) : 0);
+                    : Math.max(4, Math.round((d.phase_step / phaseTotal) * 100));
                 document.getElementById('progress-fill').style.width = pct + '%';
-                progressMetaEl.textContent = 'Step ' + d.phase_step + ' of ' + d.phase_total;
+                progressMetaEl.textContent = 'Step ' + d.phase_step + ' of ' + phaseTotal;
                 // Announce progress to assistive tech — a committee member on a
                 // screen reader hears "Sourcing candidates, step 3 of 8, 31%"
                 // instead of a silent bar. aria-valuenow tracks the same fill %.
@@ -766,7 +788,7 @@
                     trackEl.setAttribute('aria-valuenow', String(pct));
                     trackEl.setAttribute('aria-valuetext',
                         (d.phase_label || 'In progress') + ' — step ' + d.phase_step +
-                        ' of ' + d.phase_total + ', ' + pct + '% complete');
+                        ' of ' + phaseTotal + ', ' + pct + '% complete');
                     trackEl.style.display = '';
                 }
                 progressMetaEl.style.display = '';
@@ -916,6 +938,22 @@
                     };
                     cwEl.innerHTML += ' <span class="typical">(about ' +
                         fmtSpan(edr.min_days, edr.max_days) + ' out)</span>';
+                }
+                // The one question a school opens this page with is whether the
+                // search lands before the seat has to be filled — and until now
+                // the page rendered both halves of that answer (this window, and
+                // the target-start countdown further down the card) without ever
+                // joining them, leaving the client to compare two numbers in two
+                // places. The canonical placement_window_meets_target does the
+                // join server-side, so when even the late end of the window falls
+                // on or before the target start date the line earns a gold
+                // "ahead of your target start" tag. Positive-only, matching the
+                // page's other pacing tags: a window that runs past the target
+                // stays neutral here, since the countdown below already carries
+                // the negative read once a date is close or passed. Omitted
+                // entirely on older API versions where the field is absent.
+                if (d.placement_window_meets_target === true) {
+                    appendPaceTag(cwEl, 'ahead of your target start');
                 }
                 cwEl.style.display = 'block';
             } else {
@@ -1792,17 +1830,20 @@
                     // different total than the rest of the page. The fallback is
                     // the resolved catalog's own length (i.e. the number of rows
                     // actually rendered just above), not the local map's, so the
-                    // summary can't disagree with the list it summarizes.
-                    const phaseTotal = (typeof d.phase_total === 'number' && d.phase_total > 0)
+                    // summary can't disagree with the list it summarizes — which
+                    // is why it stays a separate resolution from the render-level
+                    // phaseTotal the step counters share, and carries a distinct
+                    // name rather than shadowing it.
+                    const summaryPhaseTotal = (typeof d.phase_total === 'number' && d.phase_total > 0)
                         ? d.phase_total
                         : phaseSpecs.length;
                     const done = (typeof d.phases_completed === 'number')
                         ? d.phases_completed
                         : (d.status === 'placed'
-                            ? phaseTotal
+                            ? summaryPhaseTotal
                             : Math.max(0, d.phase_step - 1));
                     let summaryText = 'The full search journey · ' +
-                        done + ' of ' + phaseTotal + ' phases complete';
+                        done + ' of ' + summaryPhaseTotal + ' phases complete';
                     // Append a glanceable pace tally so the collapsed summary
                     // carries a fresh positive signal without the client
                     // expanding the section. Prefer the API's canonical
