@@ -953,7 +953,23 @@
                 // the negative read once a date is close or passed. Omitted
                 // entirely on older API versions where the field is absent.
                 if (d.placement_window_meets_target === true) {
-                    appendPaceTag(cwEl, 'ahead of your target start');
+                    // Quote the buffer alongside the verdict when the API supplies
+                    // the canonical magnitude — "~3 weeks ahead of your target
+                    // start" is a materially more reassuring read than the bare
+                    // verdict, and it's the number a committee chair repeats back
+                    // to a board. Weeks past a fortnight and exact days below it,
+                    // the same WEEKS_THRESHOLD_DAYS convention every other span on
+                    // the page follows. Falls back to the bare tag on older API
+                    // versions missing the field.
+                    const margin = d.target_start_margin_days;
+                    let tag = 'ahead of your target start';
+                    if (typeof margin === 'number' && margin > 0) {
+                        const span = (margin >= WEEKS_THRESHOLD_DAYS)
+                            ? '~' + daysToWeeks(margin) + ' week' + (daysToWeeks(margin) === 1 ? '' : 's')
+                            : margin + ' day' + (margin === 1 ? '' : 's');
+                        tag = span + ' ahead of your target start';
+                    }
+                    appendPaceTag(cwEl, tag);
                 }
                 cwEl.style.display = 'block';
             } else {
@@ -1865,7 +1881,7 @@
                     // email / PDF), falls back to filtering phase_history
                     // locally, then to `done` when phase_history is absent
                     // (older API), where the in-flight denominator already matches.
-                    var benchmarkedDone = (typeof d.phases_benchmarked === 'number')
+                    const benchmarkedDone = (typeof d.phases_benchmarked === 'number')
                         ? d.phases_benchmarked
                         : (Array.isArray(d.phase_history)
                             ? d.phase_history.filter(function (h) { return h && typeof h.on_pace === 'boolean'; }).length
@@ -1875,7 +1891,7 @@
                         // for the "all on pace" verdict (one source of truth,
                         // shared with the planned reminder email / PDF); fall
                         // back to comparing the two integers on older API versions.
-                        var allOnPace = (typeof d.all_phases_on_pace === 'boolean')
+                        const allOnPace = (typeof d.all_phases_on_pace === 'boolean')
                             ? d.all_phases_on_pace
                             : d.phases_on_pace >= benchmarkedDone;
                         summaryText += ' · ' + (allOnPace

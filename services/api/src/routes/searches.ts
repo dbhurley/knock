@@ -489,6 +489,14 @@ const PUBLIC_ACTIVITY_LABELS: ReadonlyArray<{ type: string; singular: string; pl
 // public type has to be added in exactly one place.
 const PUBLIC_ACTIVITY_TYPES = new Set(PUBLIC_ACTIVITY_LABELS.map((l) => l.type));
 
+// The same whitelist as a plain array, for the `= ANY($2::text[])` bind on the
+// two activity queries. The status handler built this per request with
+// `Array.from(PUBLIC_ACTIVITY_TYPES)`, re-allocating a fixed classification
+// constant on every status lookup — the same thing the TERMINAL_STATUSES hoist
+// (v1.35) fixed for its Set. Derived from the Set so the array, the Set and the
+// copy catalog can't disagree about which types are client-visible.
+const PUBLIC_ACTIVITY_TYPE_LIST = Array.from(PUBLIC_ACTIVITY_TYPES);
+
 // Pick a description verb that actually fits the transition. Earlier code
 // always wrote "Search advanced: X → Y" — fine for forward progress, badly
 // wrong on the public timeline for "Sourcing → On hold" or "→ Cancelled".
@@ -703,7 +711,6 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // notes and commercial activity out of the response by construction.
     // We return up to 5 so the status page can render a small timeline —
     // each return visit feels richer than "one stale last update".
-    const activityTypes = Array.from(PUBLIC_ACTIVITY_TYPES);
     const activities = await query<{
       activity_type: string;
       description: string | null;
@@ -715,7 +722,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
          AND activity_type = ANY($2::text[])
        ORDER BY created_at DESC
        LIMIT 5`,
-      [row.id, activityTypes],
+      [row.id, PUBLIC_ACTIVITY_TYPE_LIST],
     );
 
     const latest = activities[0] ?? null;
@@ -777,7 +784,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
        WHERE search_id = $1
          AND activity_type = ANY($2::text[])
        GROUP BY activity_type`,
-      [row.id, activityTypes, nowIso, row.status_changed_at],
+      [row.id, PUBLIC_ACTIVITY_TYPE_LIST, nowIso, row.status_changed_at],
     );
     // Per-type breakdown — types with a zero count are seeded so the frontend
     // can decide what to show. The scalar counts are the column sums.
@@ -1565,6 +1572,41 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         ? estimatedDaysRemaining.max_days <= daysUntilTargetStart
         : null;
 
+    // Canonical magnitude of that verdict — how many days of buffer sit between
+    // the late end of the estimated placement window and the client's target
+    // start date (days_until_target_start − estimated_days_remaining.max_days).
+    // Positive means the search is expected to land that many days *ahead* of
+    // the seat needing to be filled; negative means the window currently runs
+    // that many days past it. It's the exact-days companion to
+    // placement_window_meets_target the same way days_over_typical_phase (v1.52)
+    // is the companion to current_phase_on_pace and activity_delta_7d (v1.46) is
+    // the companion to velocity_trend: the boolean answers "will we make it?",
+    // and nothing on the response said "by how much", so a consumer wanting to
+    // say "about three weeks of buffer" had to re-subtract the two integers
+    // itself — the precise re-derivation v1.61 surfaced the boolean to
+    // eliminate, just one level down.
+    //
+    // Signed rather than positive-only, unlike days_over_typical_phase: both
+    // directions of this one are meaningful and neither is redundant with
+    // another field (the target-start countdown carries how far away the *date*
+    // is, not how far the *window* misses it), so it follows the
+    // activity_delta_7d precedent instead. Derived from the same two canonical
+    // integers as the boolean, so it is day-granular against the same
+    // request-time nowMs and can never disagree with the verdict beside it
+    // (margin >= 0 exactly when placement_window_meets_target is true). Null in
+    // exactly the same states — no target date, or a terminal/non-progressing
+    // state where the completion window is meaningless.
+    //
+    // The status page renders only the positive case, folding the magnitude into
+    // the gold "ahead of your target start" tag so the reassurance carries a
+    // number rather than a bare verdict; roadmap #4's reminder email can quote
+    // the same buffer ("still about three weeks ahead of your September start")
+    // off one canonical integer.
+    const targetStartMarginDays: number | null =
+      estimatedDaysRemaining !== null && daysUntilTargetStart !== null
+        ? daysUntilTargetStart - estimatedDaysRemaining.max_days
+        : null;
+
     // Canonical deep-link back to this status surface. POST /api/v1/intake
     // already returns this exact shape (PUBLIC_BASE_URL + /status?ref=…); echoing
     // it here makes the status response itself a single source of truth for the
@@ -1644,6 +1686,9 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         // two canonical integers already on the response, so no consumer has to
         // compare them itself. Null when either is null.
         placement_window_meets_target: placementWindowMeetsTarget,
+        // How many days of buffer that verdict has — signed, positive when the
+        // window lands ahead of the target start date. See targetStartMarginDays.
+        target_start_margin_days: targetStartMarginDays,
         placed_at: placedAt,
         placement_followup_until: placementFollowupUntil,
         placement_followup_days_remaining: placementFollowupDaysRemaining,
