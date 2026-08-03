@@ -549,6 +549,30 @@
         // as on the server.
         const WEEKS_THRESHOLD_DAYS = 14;
 
+        // Render a day count as the page's standard span: "~3 weeks" once it's at
+        // or past a fortnight, "5 days" below that. Every weeks-valued surface on
+        // the card is that same three-line shape — gate on WEEKS_THRESHOLD_DAYS,
+        // prefer the API's canonical weeks integer, fall back to daysToWeeks(),
+        // then pluralize — written out per site at five places (the placement-age
+        // tag, the follow-up countdown, the engagement-age tag, the last-activity
+        // recency anchor, and v1.62's target-start margin tag, which even called
+        // daysToWeeks twice to pluralize). Pairing the gate with the rounding and
+        // the pluralization in one helper means a surface can't get one without
+        // the others — the frontend counterpart to the server's
+        // weeksIfPastFortnight() (v1.55), which collapsed the same five-site
+        // duplication there. Callers add their own surrounding copy (" ago",
+        // " remaining", " ahead of your target start"), which is the only part
+        // that actually differs between them. The next-milestone ETA countdown
+        // keeps its own inline form deliberately: its days branch reads "~5 days"
+        // rather than "5 days", since an ETA is approximate in both units.
+        function fmtDaySpan(days, canonicalWeeks) {
+            if (days >= WEEKS_THRESHOLD_DAYS) {
+                const w = (typeof canonicalWeeks === 'number') ? canonicalWeeks : daysToWeeks(days);
+                return '~' + w + ' week' + (w === 1 ? '' : 's');
+            }
+            return days + ' day' + (days === 1 ? '' : 's');
+        }
+
         function fmtDate(iso) {
             if (!iso) return '—';
             try {
@@ -959,15 +983,15 @@
                     // verdict, and it's the number a committee chair repeats back
                     // to a board. Weeks past a fortnight and exact days below it,
                     // the same WEEKS_THRESHOLD_DAYS convention every other span on
-                    // the page follows. Falls back to the bare tag on older API
-                    // versions missing the field.
+                    // the page follows — now through the shared fmtDaySpan(),
+                    // preferring the API's canonical target_start_margin_weeks so
+                    // the weeks read is one source of truth with the reminder
+                    // email rather than another inline conversion. Falls back to
+                    // the bare tag on older API versions missing the days field.
                     const margin = d.target_start_margin_days;
                     let tag = 'ahead of your target start';
                     if (typeof margin === 'number' && margin > 0) {
-                        const span = (margin >= WEEKS_THRESHOLD_DAYS)
-                            ? '~' + daysToWeeks(margin) + ' week' + (daysToWeeks(margin) === 1 ? '' : 's')
-                            : margin + ' day' + (margin === 1 ? '' : 's');
-                        tag = span + ' ahead of your target start';
+                        tag = fmtDaySpan(margin, d.target_start_margin_weeks) + ' ahead of your target start';
                     }
                     appendPaceTag(cwEl, tag);
                 }
@@ -1179,13 +1203,8 @@
                 let ageTag;
                 if (placedAgeDays === 0) {
                     ageTag = 'today';
-                } else if (placedAgeDays >= WEEKS_THRESHOLD_DAYS) {
-                    const wks = (typeof d.placement_age_weeks === 'number')
-                        ? d.placement_age_weeks
-                        : daysToWeeks(placedAgeDays);
-                    ageTag = '~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago';
                 } else {
-                    ageTag = placedAgeDays + ' day' + (placedAgeDays === 1 ? '' : 's') + ' ago';
+                    ageTag = fmtDaySpan(placedAgeDays, d.placement_age_weeks) + ' ago';
                 }
                 document.getElementById('placement-headline').innerHTML =
                     'Placed on <strong>' + placedDate + '</strong> · ' + ageTag + '.';
@@ -1200,15 +1219,7 @@
                     // matters most. Prefer the API's canonical
                     // placement_followup_weeks_remaining (one source of truth);
                     // fall back to the same rounding locally on older API versions.
-                    let remainingStr;
-                    if (remaining >= WEEKS_THRESHOLD_DAYS) {
-                        const wks = (typeof d.placement_followup_weeks_remaining === 'number')
-                            ? d.placement_followup_weeks_remaining
-                            : daysToWeeks(remaining);
-                        remainingStr = '~' + wks + ' week' + (wks === 1 ? '' : 's');
-                    } else {
-                        remainingStr = remaining + ' day' + (remaining === 1 ? '' : 's');
-                    }
+                    const remainingStr = fmtDaySpan(remaining, d.placement_followup_weeks_remaining);
                     // Glanceable "how far through the 90-day window" progress —
                     // a number that walks forward on every return visit across
                     // the whole follow-up window (from the API's canonical
@@ -1244,17 +1255,12 @@
                 if (!isNaN(ageDays) && ageDays >= 0) {
                     if (ageDays === 0) {
                         openedRelEl.textContent = '(today)';
-                    } else if (ageDays >= WEEKS_THRESHOLD_DAYS) {
+                    } else {
                         // Long engagements (the 10–16-week stickiness window)
                         // read better in weeks. Prefer the API's canonical
                         // engagement_age_weeks (one source of truth); fall back to
                         // the same rounding locally on older API versions.
-                        const wks = (typeof d.engagement_age_weeks === 'number')
-                            ? d.engagement_age_weeks
-                            : daysToWeeks(ageDays);
-                        openedRelEl.textContent = '(~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago)';
-                    } else {
-                        openedRelEl.textContent = '(' + ageDays + ' day' + (ageDays === 1 ? '' : 's') + ' ago)';
+                        openedRelEl.textContent = '(' + fmtDaySpan(ageDays, d.engagement_age_weeks) + ' ago)';
                     }
                 } else {
                     openedRelEl.textContent = '';
@@ -1309,17 +1315,9 @@
                         // and placement-age tags use. Prefer the API's canonical
                         // weeks_since_last_activity (one source of truth); fall
                         // back to the same rounding locally on older API versions.
-                        let recency;
-                        if (dsl === 0) {
-                            recency = 'latest today';
-                        } else if (dsl >= WEEKS_THRESHOLD_DAYS) {
-                            const wks = (typeof d.weeks_since_last_activity === 'number')
-                                ? d.weeks_since_last_activity
-                                : daysToWeeks(dsl);
-                            recency = 'latest ~' + wks + ' week' + (wks === 1 ? '' : 's') + ' ago';
-                        } else {
-                            recency = 'latest ' + dsl + ' day' + (dsl === 1 ? '' : 's') + ' ago';
-                        }
+                        const recency = dsl === 0
+                            ? 'latest today'
+                            : 'latest ' + fmtDaySpan(dsl, d.weeks_since_last_activity) + ' ago';
                         label += ' · ' + recency;
                     }
                     velocitySummary.textContent = label;
