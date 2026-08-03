@@ -1513,9 +1513,15 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // state (placed/cancelled/closed_no_fill) — exactly the cases where the
     // page already suppresses the countdown. Same one-source-of-truth and
     // null-in-terminal rationale as engagement_age_days and placement_age_days.
-    // (TERMINAL_STATUSES is a module-level constant — see its definition.)
+    // Reads the hoisted `isTerminal` rather than re-testing TERMINAL_STATUSES
+    // itself: the v1.61 pass moved the conclusion-state flags above their
+    // consumers precisely so the handler classifies "has it concluded?" once
+    // and every downstream field reads the same flag the response returns, but
+    // this gate kept its own `TERMINAL_STATUSES.has(row.status)` call and so was
+    // the last site still re-deriving it. Byte-identical — isTerminal is exactly
+    // that expression.
     let daysUntilTargetStart: number | null = null;
-    if (row.target_start_date && !TERMINAL_STATUSES.has(row.status)) {
+    if (row.target_start_date && !isTerminal) {
       const targetTs = new Date(row.target_start_date).getTime();
       if (!Number.isNaN(targetTs)) {
         daysUntilTargetStart = Math.round((targetTs - nowMs) / DAY_MS);
@@ -1607,6 +1613,27 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         ? daysUntilTargetStart - estimatedDaysRemaining.max_days
         : null;
 
+    // Canonical weeks rounding of that buffer — the days→weeks read the status
+    // page applies when it renders "~3 weeks ahead of your target start". v1.62
+    // shipped the margin as days only, and the page immediately did the
+    // fortnight-gated conversion itself, which made it the one client-side
+    // days→weeks read left after v1.30–v1.33 canonicalized every other span
+    // (weeks_until_target_start, weeks_until_next_milestone, engagement_age_weeks,
+    // placement_age_weeks, placement_followup_weeks_remaining,
+    // weeks_since_last_activity, estimated_weeks_remaining). Surfacing it closes
+    // that gap the same way, so roadmap #4's reminder email can quote "still
+    // about three weeks ahead of your September start" off the same integer the
+    // tag renders rather than re-implementing the rounding.
+    //
+    // Goes through the shared weeksIfPastFortnight() gate, so it reads in weeks
+    // only once the buffer is at or past a fortnight and is null below that,
+    // where the page shows the exact day count. Because the gate is a `>=`
+    // comparison, a *negative* margin (a window running past the target) is
+    // always null — matching the page, which renders the tag positive-only and
+    // leaves the negative read to the target-start countdown. Null in exactly
+    // the same states as target_start_margin_days otherwise.
+    const targetStartMarginWeeks = weeksIfPastFortnight(targetStartMarginDays);
+
     // Canonical deep-link back to this status surface. POST /api/v1/intake
     // already returns this exact shape (PUBLIC_BASE_URL + /status?ref=…); echoing
     // it here makes the status response itself a single source of truth for the
@@ -1689,6 +1716,10 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         // How many days of buffer that verdict has — signed, positive when the
         // window lands ahead of the target start date. See targetStartMarginDays.
         target_start_margin_days: targetStartMarginDays,
+        // The same buffer pre-rounded to the weeks the page renders past a
+        // fortnight — see targetStartMarginWeeks. Null below a fortnight (and
+        // therefore always null for a negative margin), where the exact days read.
+        target_start_margin_weeks: targetStartMarginWeeks,
         placed_at: placedAt,
         placement_followup_until: placementFollowupUntil,
         placement_followup_days_remaining: placementFollowupDaysRemaining,
