@@ -593,6 +593,7 @@ knock/
 ## 15. Known Issues & Technical Debt
 
 ### Critical
+- **Push-to-deploy on `main` is broken — nothing has auto-deployed since at least v1.62 (2026-08-02).** The `deploy` job in `.github/workflows/deploy.yml` fails at the "Deploy via SSH" step with `error: missing server host`: `appleboy/ssh-action` receives an empty `host`, i.e. the `DROPLET_IP` repository secret is unset (and `DEPLOY_SSH_KEY` is unverified for the same reason). The `test` job passes on every run, so CI is green on PRs and the failure is confined to the deploy leg — which is why it went unnoticed across three merges. **Until the secret is set, every merge to `main` needs the manual deploy in §11.** Fix: add `DROPLET_IP` (`157.245.246.123`) and `DEPLOY_SSH_KEY` under repo Settings → Secrets → Actions. Note the workflow's `docker compose exec -T app npm run db:migrate` is independently broken and will fail on the first run that gets that far: `docker-compose.yml` defines no `app` service (the API service is `api`), and no `db:migrate` script exists in either the root or `services/api` `package.json` — migrations are applied with `db/scripts/migrate.sh` / the `psql` one-liner in §11.
 - **knock-api Docker health check fails** — Container shows "unhealthy" but API responds fine. Health check endpoint path or timing may be wrong.
 - **knock-caddy Docker health check fails** — Same issue. Caddy works fine externally.
 - **ProPublica Form 990 API v2** — Filing detail endpoints return 404 for all organizations. API may have changed URL structure. Compensation enrichment blocked.
