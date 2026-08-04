@@ -387,14 +387,19 @@
         // resolveActivityLabels().
         function resolvePhaseCatalog(d) {
             const local = FORWARD_PHASES.map(function(p, i) {
-                const m = (p.typical || '').match(/(\d+)\s*[–-]\s*(\d+)/);
+                // Same shape as the catalog branch below, built from the same
+                // integers: FORWARD_PHASES carries min/max days and the display
+                // string is derived, rather than the string being stored and
+                // regex-parsed back apart to recover the benchmark. See
+                // FORWARD_PHASES.
+                const hasSpan = typeof p.min === 'number' && typeof p.max === 'number';
                 return {
                     key: p.key,
                     label: p.label,
                     step: i + 1,
                     explainer: PHASE_EXPLAINERS[p.key] || '',
-                    typical: p.typical,
-                    typicalMax: m ? parseInt(m[2], 10) : null
+                    typical: hasSpan ? (p.min + '–' + p.max + ' days') : null,
+                    typicalMax: hasSpan ? p.max : null
                 };
             });
             if (!Array.isArray(d.phase_catalog)) return local;
@@ -455,15 +460,26 @@
         // (services/api/src/routes/searches.ts). Kept here as a frontend
         // fallback so the journey overview renders even when the API hasn't
         // surfaced a particular field yet.
+        //
+        // The typical-duration benchmark is stored as the min/max integers it
+        // actually is (mirroring PUBLIC_STATUS_TYPICAL_DURATION in the API), and
+        // resolvePhaseCatalog derives the "14–28 days" display string from them.
+        // It previously held the display string, which forced the fallback path
+        // to regex-parse that string back apart to recover the typical-max the
+        // journey archive's on_pace verdict compares against — the exact
+        // parse-the-rendered-copy fragility v1.23 removed from the on_pace tag
+        // and v1.57 removed from the catalog path, left behind on the one branch
+        // that still hand-rolled it. Both branches now build the same shape from
+        // the same integers.
         const FORWARD_PHASES = [
-            { key: 'intake',            label: 'Intake review',          typical: '1–5 days'   },
-            { key: 'scoping',           label: 'Scoping & kickoff',      typical: '5–14 days'  },
-            { key: 'sourcing',          label: 'Sourcing candidates',    typical: '14–28 days' },
-            { key: 'screening',         label: 'Screening interviews',   typical: '10–21 days' },
-            { key: 'presenting',        label: 'Presenting finalists',   typical: '3–10 days'  },
-            { key: 'client_interviews', label: 'Client interviews',      typical: '14–28 days' },
-            { key: 'offer',             label: 'Offer & negotiation',    typical: '5–14 days'  },
-            { key: 'placed',            label: 'Placed',                 typical: null         }
+            { key: 'intake',            label: 'Intake review',          min: 1,    max: 5    },
+            { key: 'scoping',           label: 'Scoping & kickoff',      min: 5,    max: 14   },
+            { key: 'sourcing',          label: 'Sourcing candidates',    min: 14,   max: 28   },
+            { key: 'screening',         label: 'Screening interviews',   min: 10,   max: 21   },
+            { key: 'presenting',        label: 'Presenting finalists',   min: 3,    max: 10   },
+            { key: 'client_interviews', label: 'Client interviews',      min: 14,   max: 28   },
+            { key: 'offer',             label: 'Offer & negotiation',    min: 5,    max: 14   },
+            { key: 'placed',            label: 'Placed',                 min: null, max: null }
         ];
 
         // Plain-English explainer per phase. Shown beneath the phase label so
@@ -1285,8 +1301,28 @@
                 const n = d.activity_count_last_7d;
                 if (d.is_stalled === true) {
                     velocitySummary.className = 'velocity-summary stalled';
-                    velocitySummary.textContent = typeof d.days_in_phase === 'number'
-                        ? 'Quiet for ' + d.days_in_phase + ' days — reply to Janet if you’d like a check-in'
+                    // How long it has *actually* been quiet, from the canonical
+                    // days_quiet (the exact-days companion to is_stalled). This
+                    // line previously quoted days_in_phase, which overstates the
+                    // span whenever the phase began before the last update — a
+                    // search 40 days into a phase whose latest update landed 8
+                    // days ago read "Quiet for 40 days" immediately above a
+                    // timeline row saying "8 days ago". Falls back to
+                    // days_since_last_activity and finally to days_in_phase on
+                    // older API versions, mirroring the anchor order the API
+                    // uses. Rendered in exact days rather than the page's usual
+                    // weeks-past-a-fortnight convention: this is the one
+                    // negative-tone line on the card and the precise number is
+                    // the point, the same reason the target-start countdown
+                    // renders "(4 days past target)" in days.
+                    const quiet = (typeof d.days_quiet === 'number')
+                        ? d.days_quiet
+                        : ((typeof d.days_since_last_activity === 'number')
+                            ? d.days_since_last_activity
+                            : d.days_in_phase);
+                    velocitySummary.textContent = typeof quiet === 'number'
+                        ? 'Quiet for ' + quiet + ' day' + (quiet === 1 ? '' : 's') +
+                          ' — reply to Janet if you’d like a check-in'
                         : 'Quiet stretch — reply to Janet if you’d like a check-in';
                 } else {
                     velocitySummary.className = 'velocity-summary ' + (n > 0 ? 'warm' : 'quiet');
