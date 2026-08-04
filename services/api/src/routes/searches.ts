@@ -926,6 +926,36 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
       && typeof daysInPhase === 'number'
       && daysInPhase >= STALL_PHASE_DAYS;
 
+    // Canonical magnitude of that stall — how many days the search has actually
+    // gone without a client-visible update. is_stalled was the last verdict on
+    // the response with no exact-days companion, where every other one has
+    // gained its own: current_phase_on_pace has days_over_typical_phase (v1.52),
+    // velocity_trend has activity_delta_7d (v1.46), and
+    // placement_window_meets_target has target_start_margin_days (v1.62). The
+    // flag answers "has this search gone quiet?" and nothing said *for how
+    // long*, so each consumer had to pick an anchor itself — and the status page
+    // picked the wrong one, quoting days_in_phase, which overstates the quiet
+    // span whenever the current phase began before the last update. A search 40
+    // days into a phase whose last update landed 8 days ago read "Quiet for 40
+    // days" directly above a timeline row saying "8 days ago": the one
+    // negative-tone line on the card contradicting the evidence beneath it.
+    //
+    // Anchored on days_since_last_activity — the honest span — and falling back
+    // to days_in_phase only when there has never been any public-visible
+    // activity, i.e. when there is no last update to count from. That fallback
+    // is also self-consistent: every phase transition auto-logs a public
+    // status_change row (v1.3), so a search with no public activity at all has
+    // never transitioned and is still in its opening phase, where the two
+    // anchors coincide. Null unless is_stalled is true, matching
+    // days_over_typical_phase's null-otherwise contract — a healthy search reads
+    // a bare absence rather than a quiet-day count that means nothing beside a
+    // false flag. Lets roadmap #4's "your search has gone quiet — want a
+    // check-in?" cron quote the same span the page shows off one canonical
+    // integer instead of re-picking an anchor.
+    const daysQuiet: number | null = isStalled
+      ? daysSinceLastActivity ?? daysInPhase
+      : null;
+
     // Canonical "is the current phase still on pace?" flag — the positive
     // companion to is_stalled, mirroring the per-completed-phase on_pace field
     // in phase_history (v1.23). Completed phases already earn an "on pace" tag
@@ -1700,6 +1730,11 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         estimated_days_remaining: estimatedDaysRemaining,
         estimated_weeks_remaining: estimatedWeeksRemaining,
         is_stalled: isStalled,
+        // How long the search has actually been quiet — the exact-days
+        // magnitude companion to is_stalled. See daysQuiet: anchored on the
+        // last public-visible update, not on when the current phase began.
+        // Null unless is_stalled is true.
+        days_quiet: daysQuiet,
         opened_at: row.created_at,
         engagement_age_days: engagementAgeDays,
         engagement_age_weeks: engagementAgeWeeks,
