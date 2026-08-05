@@ -301,7 +301,7 @@
             </div>
 
             <div class="activity-card" id="activity-card">
-                <div class="label"><span class="icon-glyph" id="activity-icon" style="display:none" aria-hidden="true"></span>Latest update</div>
+                <div class="label" id="activity-label"><span class="icon-glyph" id="activity-icon" style="display:none" aria-hidden="true"></span>Latest update</div>
                 <div class="summary" id="activity-summary"></div>
                 <div class="when" id="activity-when"></div>
                 <ul class="timeline" id="activity-timeline" style="display:none"></ul>
@@ -437,6 +437,19 @@
                 .filter(function(p) { return p.n > 0; })
                 .map(function(p) { return p.n + ' ' + (p.n === 1 ? p.spec.singular : p.spec.plural); })
                 .join(', ');
+        }
+
+        // Resolve one activity type to its singular human copy off the same
+        // catalog describeBreakdown() reads, so the headline card's type
+        // description and the per-type breakdowns can't word the same type
+        // differently. Only the fallback path for older API versions — the page
+        // prefers the canonical last_activity_label. Null for an absent or
+        // unrecognised type, so the caller can gate on it.
+        function labelSpecsSingular(activityType, specs) {
+            if (!activityType) return null;
+            const match = (specs || ACTIVITY_LABELS)
+                .filter(function(spec) { return spec.key === activityType; })[0];
+            return match ? match.singular : null;
         }
 
         // Background auto-refresh: cheap way to turn an open tab into a live
@@ -1992,6 +2005,18 @@
                 document.title = '(' + newCount + ') ' + document.title;
             }
 
+            // Cleared unconditionally, before the branch that sets them: a
+            // search with no public activity yet skips the block below
+            // entirely, so clearing inside it would let a card that had a type
+            // keep that description after a re-render onto a search that has
+            // none. (The card is display:none in that state, so the stale value
+            // never reached the accessibility tree — but the attribute has no
+            // business surviving the render that dropped it.) Same
+            // clear-then-set shape as the urgency badge.
+            const labelEl = document.getElementById('activity-label');
+            labelEl.removeAttribute('title');
+            labelEl.removeAttribute('aria-label');
+
             if (d.last_activity_summary) {
                 document.getElementById('activity-summary').textContent = d.last_activity_summary;
                 setRelativeWithTooltip(document.getElementById('activity-when'), d.last_activity_at);
@@ -2024,6 +2049,28 @@
                     iconEl.style.display = 'inline-block';
                 } else {
                     iconEl.style.display = 'none';
+                }
+                // The glyph is the only thing on this card that says *what kind*
+                // of update it was — and it's aria-hidden (v1.43), correctly, so
+                // a screen reader announces "Latest update" and never learns the
+                // type a sighted client reads straight off the icon. Naming the
+                // type in a title + aria-label closes that gap on both surfaces:
+                // hovering the label spells out the glyph, and assistive tech
+                // hears "Latest update: candidate presented". Same
+                // a11y-as-stickiness rationale as the v1.26 velocity chip, v1.56
+                // journey range and v1.60 urgency badge passes — and it's the
+                // page consumer for the canonical last_activity_label, so the
+                // card's fourth read comes from the same hoisted `latest` row as
+                // its summary, timestamp and glyph. Falls back to the local
+                // catalog on older API versions missing the field; the
+                // attributes were cleared above, so an unrecognised type leaves
+                // the label undescribed rather than keeping a stale one.
+                const typeLabel = (typeof d.last_activity_label === 'string' && d.last_activity_label)
+                    ? d.last_activity_label
+                    : labelSpecsSingular(headlineType, labelSpecs);
+                if (typeLabel) {
+                    labelEl.title = 'Latest update: ' + typeLabel;
+                    labelEl.setAttribute('aria-label', 'Latest update: ' + typeLabel);
                 }
                 actCard.classList.add('show');
                 actCard.classList.toggle(
