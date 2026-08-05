@@ -497,6 +497,28 @@ const PUBLIC_ACTIVITY_TYPES = new Set(PUBLIC_ACTIVITY_LABELS.map((l) => l.type))
 // copy catalog can't disagree about which types are client-visible.
 const PUBLIC_ACTIVITY_TYPE_LIST = Array.from(PUBLIC_ACTIVITY_TYPES);
 
+// Canonical singular human copy for a raw activity_type code — the activity
+// analogue of what phaseLabelFor() is for a status code, resolved off the same
+// PUBLIC_ACTIVITY_LABELS catalog so the two can never disagree.
+//
+// Every other client-visible enum on the status response is handed over with
+// its resolved copy beside it: `status` pairs with `phase_label`,
+// `search_urgency` with `search_urgency_label` (v1.60), `next_milestone_phase`
+// with `next_milestone_label` (v1.59), and each phase_history / phase_catalog
+// entry pairs its `phase` with a `label`. `last_activity_type` (v1.47) is the
+// one that never got its half of that pairing — v1.56's activity_labels made
+// the copy *derivable*, but a consumer still has to scan the catalog for the
+// matching entry to render it, which is exactly the re-derivation v1.59 closed
+// in the opposite direction (a label with no code beside it). Null for an
+// unrecognised type, mirroring how phaseLabelFor()'s callers treat an unknown
+// phase and how search_urgency_label handles an unrecognised urgency.
+const PUBLIC_ACTIVITY_LABEL_BY_TYPE = new Map(
+  PUBLIC_ACTIVITY_LABELS.map((l) => [l.type, l.singular]),
+);
+function activityLabelFor(activityType: string): string | null {
+  return PUBLIC_ACTIVITY_LABEL_BY_TYPE.get(activityType) ?? null;
+}
+
 // Pick a description verb that actually fits the transition. Earlier code
 // always wrote "Search advanced: X → Y" — fine for forward progress, badly
 // wrong on the public timeline for "Sourcing → On hold" or "→ Cancelled".
@@ -1790,6 +1812,20 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         // there's no public activity yet, mirroring them. Belongs only on the
         // verified success shape — covered by the same negative-path 404 test.
         last_activity_type: latest?.activity_type ?? null,
+        // Resolved singular human copy for that enum — see activityLabelFor().
+        // The pairing every other client-visible enum on this response already
+        // has (`status`/`phase_label`, `search_urgency`/`search_urgency_label`,
+        // `next_milestone_phase`/`next_milestone_label`, each phase entry's
+        // `phase`/`label`), and the one last_activity_type was missing: v1.56's
+        // activity_labels made this copy derivable, but only by scanning the
+        // catalog for the matching entry. Lets roadmap #4's per-type reminder
+        // email title itself ("Update on your search: candidate presented")
+        // in the same words the page shows, off one field. Null when there's no
+        // public activity yet — mirroring last_activity_type — and for an
+        // unrecognised type, mirroring search_urgency_label.
+        last_activity_label: latest?.activity_type
+          ? activityLabelFor(latest.activity_type)
+          : null,
         activity_count_last_7d: activityCountLast7d,
         activity_count_prev_7d: activityCountPrev7d,
         activity_delta_7d: delta,

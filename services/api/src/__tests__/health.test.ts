@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-const baseUrl = process.env.API_URL ?? 'http://localhost:3000';
+// Port 4000 is the API (see docker-compose.yml); 3000 is OpenClaw/Janet, a
+// separate service that serves none of these routes.
+const baseUrl = process.env.API_URL ?? 'http://localhost:4000';
 
 describe('GET /health', () => {
   it('should respond with healthy or degraded status', async () => {

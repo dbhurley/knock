@@ -45,7 +45,27 @@ jobs:
             git pull origin main
             docker compose build
             docker compose up -d
-            docker compose exec -T app npm run db:migrate
+            # NOTE: migrations are deliberately NOT applied here. This step
+            # previously read `docker compose exec -T app npm run db:migrate`,
+            # which could never have worked — docker-compose.yml defines no
+            # `app` service (the API service is `api`) and no `db:migrate`
+            # script exists in either package.json. It went unnoticed because
+            # the job has been failing earlier, at the SSH step, since the
+            # DROPLET_IP secret was unset.
+            #
+            # It is not replaced with a loop over db/migrations/*.sql because
+            # that would be unsafe: this repo has no migration-ledger table, so
+            # there is no way to tell which files have already run, and the
+            # early migrations are not idempotent (002_create_schools.sql opens
+            # with a bare `CREATE TABLE schools (...)`, no IF NOT EXISTS). A
+            # blanket re-run would abort on the first already-applied file on
+            # every single deploy. Until a ledger exists, new migrations are
+            # applied by hand per CLAUDE.md §11.
             sleep 5
-            curl -f http://localhost:3000/health || exit 1
+            # Health-check the API, which publishes on 127.0.0.1:4000 (see
+            # docker-compose.yml). This previously curled port 3000 — that's
+            # OpenClaw/Janet, a separate systemd service — so the deploy gate
+            # was verifying a process this workflow never touches, and an API
+            # that failed to come up would still have reported success.
+            curl -f http://localhost:4000/health || exit 1
             echo "Deploy successful"

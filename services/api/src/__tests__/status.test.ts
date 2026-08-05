@@ -1,7 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-const baseUrl = process.env.API_URL ?? 'http://localhost:3000';
+// Port 4000 is the API (see docker-compose.yml); 3000 is OpenClaw/Janet, a
+// separate service that serves none of these routes.
+const baseUrl = process.env.API_URL ?? 'http://localhost:4000';
 
 // The status endpoint is the only auth-exempt route that returns search data,
 // so the priority of these tests is verifying the negative paths: invalid
@@ -924,7 +926,7 @@ describe('POST /api/v1/searches/status', () => {
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
-  it('does not leak last_activity_type or the raw status on 404 (no recency-type or current-phase hints to anonymous callers)', async () => {
+  it('does not leak last_activity_type, its resolved label, or the raw status on 404 (no recency-type or current-phase hints to anonymous callers)', async () => {
     // last_activity_type is the machine-readable enum of the most recent
     // public activity (the canonical key roadmap #4's per-type reminder emails
     // branch on); `status` is the raw current-phase code — the most directly
@@ -934,6 +936,11 @@ describe('POST /api/v1/searches/status', () => {
     // exists (and, for status, exactly which phase it's in / for
     // last_activity_type what kind of update it last saw). They belong only on
     // the verified success shape, like every other personalized field.
+    //
+    // last_activity_label is asserted here alongside the enum it resolves
+    // rather than in a test of its own — it discloses exactly what the enum
+    // does, just in English, so the two stand or fall together. Same pairing as
+    // search_urgency / search_urgency_label above.
     const res = await fetch(`${baseUrl}/api/v1/searches/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -945,6 +952,7 @@ describe('POST /api/v1/searches/status', () => {
     assert.equal(res.status, 404);
     const body = await res.json();
     assert.ok(!('last_activity_type' in body), 'last_activity_type must not leak on 404');
+    assert.ok(!('last_activity_label' in body), 'last_activity_label must not leak on 404');
     assert.ok(!('status' in body), 'raw status must not leak on 404');
     assert.ok(!('data' in body), 'must not include data on 404');
   });
