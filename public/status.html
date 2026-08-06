@@ -696,7 +696,20 @@
 
             document.getElementById('position-title').textContent = d.position_title || 'Executive Search';
             document.getElementById('school-name').textContent = [d.school_name, d.school_location].filter(Boolean).join(' · ') || '';
-            document.getElementById('ref-num').textContent = d.search_number;
+            const refNum = document.getElementById('ref-num');
+            refNum.textContent = d.search_number;
+            // The pill ships with a static aria-label ("Reference number — click
+            // to copy"), and because aria-label *replaces* an element's own text,
+            // that meant a screen reader announced the affordance but never the
+            // reference itself — so the one string on the page a client is meant
+            // to quote back to Janet, paste into a board packet, or read aloud on
+            // a committee call was the one string assistive tech couldn't reach.
+            // Same information asymmetry the v1.65 headline-glyph and v1.60
+            // urgency-badge passes closed, except here the label was actively
+            // hiding the content rather than merely omitting it. Set on render so
+            // the announced label carries the resolved ref.
+            refNum.setAttribute('aria-label',
+                'Reference number ' + d.search_number + ' — click to copy');
             document.getElementById('phase-label').textContent = d.phase_label;
 
             // Pre-fill the "Email Janet" mailto with the canonical ref + position
@@ -718,6 +731,18 @@
             const statusLink = (typeof d.status_url === 'string' && d.status_url)
                 ? d.status_url
                 : location.origin + '/status?ref=' + encodeURIComponent(d.search_number);
+            // Stashed alongside the ref/email the Refresh button already carries
+            // so the Share button — which lives outside this render function and
+            // so can't close over the const — hands out the *same* canonical link
+            // rather than rebuilding it from location.origin. It was the last
+            // surface on the page still assembling the status link by hand after
+            // v1.54 collapsed the mailto / Google Calendar / .ics sites into this
+            // one resolution, and it's the surface whose entire job is handing the
+            // link to someone else: a board chair who receives a shared link
+            // should land on exactly the URL the confirmation email and the
+            // calendar reminder point at, even where PUBLIC_BASE_URL differs from
+            // the origin the page happens to be served from.
+            refreshBtn.dataset.statusLink = statusLink;
 
             const emailBtn = document.getElementById('email-btn');
             if (emailBtn && d.search_number) {
@@ -2246,7 +2271,11 @@
         shareBtn.addEventListener('click', async function() {
             const ref = refreshBtn.dataset.ref;
             if (!ref) return;
-            const url = location.origin + '/status?ref=' + encodeURIComponent(ref);
+            // Prefer the canonical status link resolved at render time (from the
+            // API's status_url), falling back to a locally-built deep-link only
+            // if no render has stashed one yet.
+            const url = refreshBtn.dataset.statusLink ||
+                (location.origin + '/status?ref=' + encodeURIComponent(ref));
             const title = ref + ' · Knock Executive Search';
             try {
                 if (navigator.share) {

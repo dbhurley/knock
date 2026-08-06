@@ -366,6 +366,12 @@ describe('POST /api/v1/searches/status', () => {
     const body = await res.json();
     assert.ok(!('activity_count_prev_7d' in body), 'prev-week count must not leak on 404');
     assert.ok(!('velocity_trend' in body), 'velocity_trend must not leak on 404');
+    // velocity_trend_label is the resolved English for that same enum. It
+    // discloses exactly what the code does, just in words, so the two stand or
+    // fall together — the same pairing rationale that puts search_urgency and
+    // search_urgency_label (and last_activity_type / last_activity_label) under
+    // a single assertion rather than separate ones.
+    assert.ok(!('velocity_trend_label' in body), 'velocity_trend_label must not leak on 404');
     assert.ok(!('data' in body), 'must not include data on 404');
   });
 
