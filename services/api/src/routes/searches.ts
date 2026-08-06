@@ -168,6 +168,38 @@ const PUBLIC_URGENCY_LABELS: Record<string, string> = {
   flexible:  'Flexible timing',
 };
 
+// The four categorical week-over-week tempo readings velocity_trend can carry.
+// Named as a type so the classification below and the copy catalog beside it
+// are checked against one exhaustive list rather than restating the union twice.
+type VelocityTrend = 'accelerating' | 'steady' | 'cooling' | 'quiet';
+
+// Canonical human copy for the velocity_trend enum — the tempo analogue of what
+// PUBLIC_URGENCY_LABELS is for search_urgency and phaseLabelFor() is for status.
+//
+// v1.60 surfaced search_urgency_label on the stated principle that no
+// client-visible enum should be handed to a consumer with no English attached,
+// and claimed it was the last one. It wasn't: velocity_trend (v1.17) is just as
+// client-visible — it's the field the status page's velocity chip renders — and
+// the words that turn 'accelerating' into something a client reads live only in
+// that chip's branch ladder. Roadmap #4's reminder email is documented to open
+// on the same tempo signal ("5 updates this week — 3 more than the week
+// before"), so it would have to pick its own wording for the category itself,
+// the exact duplication activity_labels (v1.56) and phase_catalog (v1.57)
+// closed for the activity and phase copy.
+//
+// Deliberately short, neutral, and standalone — these read as a label ("Tempo:
+// Picking up") rather than as the chip's contextual sentence, which embeds the
+// prior-week count and stays the page's own copy. Typed against VelocityTrend
+// so the map is exhaustive by construction and the lookup always resolves (no
+// `?? null` fallback is reachable, unlike search_urgency_label, whose raw enum
+// comes from client intake and may be absent or unrecognised).
+const PUBLIC_VELOCITY_TREND_LABELS: Record<VelocityTrend, string> = {
+  accelerating: 'Picking up',
+  steady:       'Steady',
+  cooling:      'Easing off',
+  quiet:        'Quiet',
+};
+
 // A progressing search is "stalled" when the public-visible timeline has been
 // quiet for a full week *and* the current phase has dragged for two weeks.
 // Both thresholds matter: a fresh phase shouldn't trigger the flag just
@@ -861,7 +893,7 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
     // always read as a "drop" and visually punish the client. The frontend
     // can use these labels to swap one short visible chip ("up from 2 last
     // week" / "steady" / "down from 5 last week") without doing the math.
-    let velocityTrend: 'accelerating' | 'steady' | 'cooling' | 'quiet';
+    let velocityTrend: VelocityTrend;
     // Signed week-over-week change in public-visible activity, surfaced as the
     // canonical `activity_delta_7d` field below. velocity_trend (v1.17) and
     // is_ramping_up (v1.40) are both derived from this same delta; exposing the
@@ -1832,6 +1864,16 @@ export default async function searchRoutes(app: FastifyInstance): Promise<void> 
         activity_count_total: activityCountTotal,
         activity_count_this_phase: activityCountThisPhase,
         velocity_trend: velocityTrend,
+        // Resolved human copy for that enum — see PUBLIC_VELOCITY_TREND_LABELS.
+        // The pairing every other client-visible enum on this response already
+        // has (`status`/`phase_label`, `search_urgency`/`search_urgency_label`,
+        // `last_activity_type`/`last_activity_label`), and the one velocity_trend
+        // was still missing: its English lived only in the status page's chip.
+        // Lets roadmap #4's reminder email name the tempo in one canonical word
+        // instead of re-implementing the page's branch ladder. Always a string —
+        // the catalog is exhaustive over VelocityTrend, so unlike
+        // search_urgency_label there is no unrecognised-value case to be null for.
+        velocity_trend_label: PUBLIC_VELOCITY_TREND_LABELS[velocityTrend],
         is_ramping_up: isRampingUp,
         // Canonical human copy + narrative order for the per-type keys used by
         // activity_breakdown, activity_breakdown_this_phase and
